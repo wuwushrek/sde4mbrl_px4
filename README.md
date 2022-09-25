@@ -1,2 +1,2 @@
-# mpc-offboard-px4
+# mpc4px4
 MPC-based Control of PX4
