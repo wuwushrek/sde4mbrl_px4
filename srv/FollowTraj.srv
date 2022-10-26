@@ -1,0 +1,4 @@
+# <=0 not active, 1 means following traj, >1 means idle [Stuck at first trajectory point]
+int16 state_controller
+---
+bool success

@@ -17,7 +17,7 @@ def handle_user_input(node):
 
     # Create autocomplete based on node functions
     # Get relevant node function
-    node_functions = ['arm', 'disarm', 'takeoff', 'land', 'pos', 'relpos', 'offboard']
+    node_functions = ['arm', 'disarm', 'takeoff', 'land', 'pos', 'relpos', 'offboard', 'controller_init', 'controller_on', 'controller_off', 'controller_idle']
     completer = WordCompleter(node_functions, ignore_case=True)
     while True:
         try:
@@ -41,6 +41,7 @@ def handle_user_input(node):
                 print('pos(x,y,z,yaw)')
                 print('relpos(dx,dy,dz,dyaw)')
                 print('offboard()')
+                print('controller_init(path_traj,path_params)')
                 is_last_valid = True
                 node.userin = False
                 print('\n')
@@ -61,12 +62,13 @@ def handle_user_input(node):
             # Separate the arguments from the values
             args_ = []
             kwargs_ = {}
+            type_fn = str if function_name in ['controller_init'] else float
             for arg in args:
                 if '=' in arg:
                     key, value = arg.split('=')
-                    kwargs_[key] = float(value)
+                    kwargs_[key] = type_fn(value)
                 else:
-                    args_.append(float(arg))
+                    args_.append(type_fn(arg))
             # print(args, kwargs_, function)
             # Call the function with the arguments
             function(*args_, **kwargs_)

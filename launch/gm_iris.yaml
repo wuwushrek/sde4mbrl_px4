@@ -1,0 +1,17 @@
+# Parameters for the geometric_controller when acting on iris
+attctrl_tau: 0.1
+norm_thrust_const: 0.05 # Should play with it
+norm_thrust_offset: 0.22 # Depend on nbattery level and mass to g ratio
+max_acc: 7.0 # Maximum acceleration
+gravity: 9.81 # Gravity constant
+drag_dx: 0.0 # drag coeff along x axis
+drag_dy: 0.0
+drag_dz: 0.0
+Kp_x: 8.0
+Kp_y: 8.0
+Kp_z: 10.0
+Kv_x: 1.5
+Kv_y: 1.5
+Kv_z: 3.3
+ctrl_mode: 1 # {1 : ERROR_QUATERNION, 2 : ERROR_GEOMETRIC}
+feedthrough_enable: false # 
