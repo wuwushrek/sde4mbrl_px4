@@ -198,6 +198,10 @@ class geometricCtrl
         std::vector<Eigen::Vector3d> target_acc_; // trajectory in ENU
         std::vector<double> target_yaw_; // YAW
 
+        // Desired pose setpoint if not in trajectory mode
+        geometry_msgs::PoseStamped target_sp_;
+        bool pose_ctrl_;
+
         double trajec_time_; // time of the trajectory in seconds
         int current_stage_; // current stage of the trajectory
         bool run_trajectory_; // flag to run the trajectory
@@ -218,6 +222,7 @@ class geometricCtrl
         double Kpos_x_, Kpos_y_, Kpos_z_, Kvel_x_, Kvel_y_, Kvel_z_;
         int ctrl_mode_;
         bool feedthrough_enable_;
+        std::string config_file_;
 
         Eigen::Vector3d Kpos_, Kvel_, D_;
         Eigen::Vector3d g_;

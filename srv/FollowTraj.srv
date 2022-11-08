@@ -1,4 +1,10 @@
 # <=0 not active, 1 means following traj, >1 means idle [Stuck at first trajectory point]
+uint8 CTRL_INACTIVE = 0
+uint8 CTRL_TRAJ_ACTIVE = 1
+uint8 CTRL_TRAJ_IDLE = 2
+uint8 CTRL_POSE_ACTIVE = 3
+
 int16 state_controller
+geometry_msgs/PoseStamped target_pose
 ---
 bool success

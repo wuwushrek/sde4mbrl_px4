@@ -1,22 +1,30 @@
-# An example of config file used to train the static parameters of the quadcopter
+# An example of config file used to train the geometric parameters of the quadcopter
+# along with the thurst and moment response to motors inputs
 
 # Path the the log data
 logs_dir:
-  - /home/franckdjeumou/Documents/log_flights/log_sitl_2022-10-22-15-53-52.ulg
-  - /home/franckdjeumou/Documents/log_flights/log_sitl_2022-10-25-13-57-58.ulg
+  - /home/franckdjeumou/Documents/log_flights/iris_sitl_1.ulg
+  - /home/franckdjeumou/Documents/log_flights/iris_sitl_2.ulg
+  - /home/franckdjeumou/Documents/log_flights/iris_sitl_0.ulg
   # More trajectories if available
 
-test_trajectory: /home/franckdjeumou/Documents/log_flights/log_6_2022-10-25-14-03-16.ulg
+# Testing trajectory
+test_trajectory: /home/franckdjeumou/Documents/log_flights/iris_sitl_test.ulg
 
 # Seed for random number genertaion
 seed: 0
 
-# Prior model parameter path
-prior_model_path: /home/franckdjeumou/catkin_ws/src/mpc4px4/launch/iris_model_prior.yaml
+# Directory of prior model file. This is where the outputs are going to be saved
+vehicle_dir: /home/franckdjeumou/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris
 
-# Cutoff frequency for filtering
+# Prior model parameter path
+prior_file: iris_prior.yaml
+
+# Enforce that the trajectory log is filtered every time
+# When false, the trajectory is only filtered the first time and save on the disk
 force_filtering: False
 
+# Cutoff frequency for filtering
 # The details on how to find them can be seen in filter_data_analysis.ipynb
 cutoff_freqs:
   x: 2
@@ -36,10 +44,10 @@ cutoff_freqs:
 # Loss function parameters
 # Parameters to weight objective in the loss function
 loss:
-  pen_xdot: 10.0               # Weight coefficient on the vector field
-  pen_motor_constr: 10.0      # Weight coefficient on the maximum speed from the motors
-  pen_init_dev: 100.0         # Weight coefficient on the deviation from the prior values on the model
-  pen_params: 0.0
+  pen_xdot: 10.0                # Weight coefficient on the vector field
+  pen_motor_constr: 10.0        # Weight coefficient on the maximum speed from the motors
+  pen_init_dev: 1.0             # Weight coefficient on the deviation from the prior values on the model
+  pen_params: 0.0               # Weight on all the params of the problem
 
 
 # Optimizer parameters
@@ -52,30 +60,18 @@ optimizer:
     scheduler: True
     params:
       init_value: -0.01 # Initial learning rate (Negative value for minimization)
-      transition_steps: 50000 # Basically the maximum number of gradient steps
+      transition_steps: 80000 # Basically the maximum number of gradient steps
       decay_rate: 0.01 # Typically (end_value / init_value) if end_value is expected at end
   # - name: adaptive_grad_clip
   #   params:
   #     clipping: 0.01
 
-# # Optimizer parameters
-# optimizer:
-#   name: ArmijoSGD
-#   params:
-#     max_stepsize: 1.0
-#     aggressiveness: 0.8
-  
-# optimizer:
-#   name: PolyakSGD
-#   params:
-#     max_stepsize: 1.0
-
 # Training parameters
 training:
   train_batch_per_traj: 4096 # The mini batch size for the training dataset
-  test_batch_size: 4096 # The mini batch used for evaluating the training trajectory
+  test_batch_size: 1024 # The mini batch used for evaluating the training trajectory
 
-  nepochs: 15000 # The number of epochs (full pass over the training dataset)
+  nepochs: 20000 # The number of epochs (full pass over the training dataset)
   
   patience: 5000 # The number of epochs after which to stop the learningif no improvement in solution
 

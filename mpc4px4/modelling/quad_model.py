@@ -3,9 +3,11 @@ import jax.numpy as jnp
 
 from mpc4px4.helpers import quatmult as quatmult_gen
 from mpc4px4.helpers import quat_rotatevector as quat_rotatevector_gen
+from mpc4px4.helpers import quat_rotatevectorinv as quat_rotatevectorinv_gen
 
 quatmult = lambda a, b: quatmult_gen(a, b, jnp)
 quat_rotatevector = lambda q, v: quat_rotatevector_gen(q, v, jnp)
+quat_rotatevectorinv = lambda q, v: quat_rotatevectorinv_gen(q, v, jnp)
 
 import haiku as hk
 
@@ -20,7 +22,7 @@ def get_pos(state):
     """
     return state[0:3]
 
-def set_pos(state, x=None, y=None, z=None):
+def set_pos(state, pos):
     """Set the position from the state.
 
     Args:
@@ -29,13 +31,7 @@ def set_pos(state, x=None, y=None, z=None):
     Returns:
         jax.numpy.ndarray: The pose of the drone.
     """
-    if x is not None:
-        state = jax.ops.index_update(state, jax.ops.index[0], x)
-    if y is not None:
-        state = jax.ops.index_update(state, jax.ops.index[1], y)
-    if z is not None:
-        state = jax.ops.index_update(state, jax.ops.index[2], z)
-    return state
+    return state.at[0:3].set(pos)
 
 def get_vel(state):
     """Get the velocity from the state.
@@ -48,7 +44,7 @@ def get_vel(state):
     """
     return state[3:6]
 
-def set_vel(state, vx=None, vy=None, vz=None):
+def set_vel(state, vel):
     """Set the velocity from the state.
 
     Args:
@@ -57,13 +53,7 @@ def set_vel(state, vx=None, vy=None, vz=None):
     Returns:
         jax.numpy.ndarray: The velocity of the drone.
     """
-    if vx is not None:
-        state = jax.ops.index_update(state, jax.ops.index[3], vx)
-    if vy is not None:
-        state = jax.ops.index_update(state, jax.ops.index[4], vy)
-    if vz is not None:
-        state = jax.ops.index_update(state, jax.ops.index[5], vz)
-    return state
+    return state.at[3:6].set(vel)
 
 def get_quat(state):
     """Get the quaternion from the state.
@@ -76,7 +66,7 @@ def get_quat(state):
     """
     return state[6:10]
 
-def set_quat(state, qw=None, qx=None, qy=None, qz=None):
+def set_quat(state, q):
     """Set the quaternion from the state.
        The convention is q0 + q1*i + q2*j + q3*k
     Args:
@@ -85,15 +75,7 @@ def set_quat(state, qw=None, qx=None, qy=None, qz=None):
     Returns:
         jax.numpy.ndarray: The quaternion of the drone.
     """
-    if qw is not None:
-        state = jax.ops.index_update(state, jax.ops.index[6], qw)
-    if qx is not None:
-        state = jax.ops.index_update(state, jax.ops.index[7], qx)
-    if qy is not None:
-        state = jax.ops.index_update(state, jax.ops.index[8], qy)
-    if qz is not None:
-        state = jax.ops.index_update(state, jax.ops.index[9], qz)
-    return state
+    return state.at[6:10].set(q)
 
 def get_ang_vel(state):
     """Get the angular velocity from the state.
@@ -106,7 +88,7 @@ def get_ang_vel(state):
     """
     return state[10:13]
 
-def set_ang_vel(state, wx=None, wy=None, wz=None):
+def set_ang_vel(state, w):
     """Set the angular velocity from the state.
 
     Args:
@@ -115,13 +97,7 @@ def set_ang_vel(state, wx=None, wy=None, wz=None):
     Returns:
         jax.numpy.ndarray: The angular velocity of the drone.
     """
-    if wx is not None:
-        state = jax.ops.index_update(state, jax.ops.index[10], wx)
-    if wy is not None:
-        state = jax.ops.index_update(state, jax.ops.index[11], wy)
-    if wz is not None:
-        state = jax.ops.index_update(state, jax.ops.index[12], wz)
-    return state
+    return state.at[10:13].set(w)
 
 
 # TODO: Later on make it derive from  ControlledSDE class instead
@@ -193,7 +169,10 @@ class QuadDynamics(hk.Module):
         # Get the total moment
         M = Mxyz
         if Mres is not None:
-            M += Mres
+            assert Mres.shape[0] == 3 or Mres.shape[0] == 6, "The residual moment must be a 3D vector or a 6D vector"
+            if Mres.shape[0] == 6:
+                M *= Mres[3:]
+            M += Mres[:3]
         
         # Get the angular velocity
         ang_vel = get_ang_vel(x)
@@ -212,7 +191,7 @@ class QuadDynamics(hk.Module):
 
         return quat_dot, ang_acc
     
-    def body_thrust_from_actuator(self, w_vec):
+    def body_thrust_from_actuator(self, w_vec, ext_thrust=jnp.array([1., 1., 1., 1.])):
         """Compute the thrust in the body frame from the motor speed.
 
         Args:
@@ -228,9 +207,9 @@ class QuadDynamics(hk.Module):
         """
         # Get the thrust coefficient
         Ct = self.get_param('Ct')
-        return Ct * jnp.sum(jnp.square(w_vec))
+        return Ct * jnp.sum(jnp.square(w_vec) * ext_thrust)
     
-    def body_moment_from_actuator(self, w_vec, x=None):
+    def body_moment_from_actuator(self, w_vec, x=None, ext_thrust=jnp.array([1., 1., 1., 1.])):
         """Compute the moment in the body frame from the motor speed.
 
         Args:
@@ -253,12 +232,14 @@ class QuadDynamics(hk.Module):
         Dm_y = self.get_param('Dm_y')
         # Square of the motor speed
         w1_2, w2_2, w3_2, w4_2 = jnp.square(w_vec)
+        # Compute the moment along z
+        Mz = (w3_2 + w4_2 - w1_2 - w2_2) * Cd
+        # Include the external thrust constraints
+        w1_2, w2_2, w3_2, w4_2 = w1_2 * ext_thrust[0], w2_2 * ext_thrust[1], w3_2 * ext_thrust[2], w4_2 * ext_thrust[3]
         # Compute the moment along x
         Mx = (w2_2 + w3_2 - w1_2 - w4_2) * Dm_y * Ct
         # Compute the moment along y
         My = (w2_2 + w4_2 - w1_2 - w3_2) * Dm_x * Ct
-        # Compute the moment along z
-        Mz = (w3_2 + w4_2 - w1_2 - w2_2) * Cd
 
         # Extra terms due to the angular velocity
         if x is not None:
@@ -406,12 +387,16 @@ class QuadDynamics(hk.Module):
         # return self.single_motor_model(1.0) - self.single_motor_model(100.0)
         return jnp.square(1.0 - self.single_motor_model(1.0)) + jnp.square(self.single_motor_model(0.0))
     
-    def vector_field(self, x, pwm_in, Fres=None, Mres=None):
+    def vector_field(self, x, pwm_in, Fres=None, Mres=None, ext_thrust=jnp.array([1.0, 1.0, 1.0, 1.0])):
         """Compute the dynamics of the quadrotor.
 
         Args:
             x (jax.numpy.ndarray): The state of the quadrotor.
             u (jax.numpy.ndarray): The input of the quadrotor.
+            Fres (jax.numpy.ndarray, optional): The residual force. Defaults to None.
+            Mres (jax.numpy.ndarray, optional): The residual moment. Defaults to None.
+            ext_thrust (jax.numpy.ndarray, optional): The external thrust, e.g. ground effect. 
+                Defaults to jnp.array([1.0, 1.0, 1.0, 1.0]). This value must be between 0 and 1.
 
         Returns:
             jax.numpy.ndarray: The derivative of the state.
@@ -424,23 +409,23 @@ class QuadDynamics(hk.Module):
         w4 = self.single_motor_model(pwm_in[3])
         w_vect = jnp.array([w1, w2, w3, w4])
         
-        _Fres = None
-        # Residual force and moments
-        if Fres is not None:
-            _Fres = Fres(x, w_vect)
+        # _Fres = None
+        # # Residual force and moments
+        # if Fres is not None:
+        #     _Fres = Fres(x, w_vect)
         
-        _Mres = None
-        if Mres is not None:
-            _Mres = Mres(x, w_vect)
+        # _Mres = None
+        # if Mres is not None:
+        #     _Mres = Mres(x, w_vect)
 
         # Compute the thrust
-        thrust = self.body_thrust_from_actuator(w_vect)
+        thrust = self.body_thrust_from_actuator(w_vect, ext_thrust=ext_thrust)
         # Compute the moments and consider gyro effects if enable
-        moment = self.body_moment_from_actuator(w_vect, x if self.init_params.get('gyro_effect', False) else None)
+        moment = self.body_moment_from_actuator(w_vect, x if self.init_params.get('gyro_effect', False) else None, ext_thrust=ext_thrust)
         # Compute the translational dynamics
-        pos_dot, v_dot = self.translational_dynamics(x, thrust, _Fres)
+        pos_dot, v_dot = self.translational_dynamics(x, thrust, Fres)
         # Compute the rotational dynamics
-        quat_dot, omega_dot = self.rotational_dynamics(x, moment, _Mres)
+        quat_dot, omega_dot = self.rotational_dynamics(x, moment, Mres)
         # Return the derivative
         return jnp.concatenate((pos_dot, v_dot, quat_dot, omega_dot))
     

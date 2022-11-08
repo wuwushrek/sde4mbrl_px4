@@ -25,16 +25,32 @@ geometricCtrl::geometricCtrl(const ros::NodeHandle &nh)
     nh_.param<double>("max_acc", max_fb_acc_, 9.0);
     nh_.param<int>("ctrl_mode", ctrl_mode_, ERROR_QUATERNION);
     nh_.param<bool>("feedthrough_enable", feedthrough_enable_, false);
+    // Path to a configuration file
+    nh_.param<std::string>("config_file", config_file_, "");
+
+
     last_time_ = ros::Time::now();
     trajec_time_ = -1.0;
     current_stage_ = 0;
     run_trajectory_ = false;
+    pose_ctrl_ = false;
 
     // Initialize array version of some of these parameters
     g_ << 0.0, 0.0, -gravity_;
     Kpos_ << -Kpos_x_, -Kpos_y_, -Kpos_z_;
     Kvel_ << -Kvel_x_, -Kvel_y_, -Kvel_z_;
     D_ << dx_, dy_, dz_;
+
+    // Check if the configuration file is empty
+    if (config_file_.empty()){
+        ROS_WARN("No configuration file specified");
+    } else{
+        // Then load the parameters
+        if (loadParameters(config_file_) == false)
+        {
+            ROS_ERROR("Failed to load the parameters");
+        }
+    }
 
     // Initialize the subscribers
     mav_full_state_sub_ = nh_.subscribe("mavros/mpc_full_state/state", 1, &geometricCtrl::mavStateCallback, this);
@@ -82,6 +98,8 @@ bool geometricCtrl::setTrajectoryAndParams(mpc4px4::LoadTrajAndParams::Request &
 
 bool geometricCtrl::triggerTrajectory(mpc4px4::FollowTraj::Request &req, mpc4px4::FollowTraj::Response &res)
 {
+    // Set the target setpoint if given by the user
+    target_sp_ = req.target_pose;
     startTrajectory(req.state_controller);
     res.success = true;
     return true;
@@ -116,13 +134,25 @@ void geometricCtrl::controlLoopBody()
     Eigen::Vector3d targetPos, targetVel, targetAcc;
     double targetYaw;
     Eigen::Vector4d q_des;
-
-    bool success = extractSetpointFromTrajectory(dt, targetPos, targetVel, targetAcc, targetYaw);
     
     // // warn if the trajectory is not being followed
     // if (!success) {
     //     ROS_WARN("Trajectory not being followed");
     // }
+
+    bool success = false;
+    if (pose_ctrl_){
+        // Set targetPos to the position in PoseStamped target_sp_
+        targetPos << target_sp_.pose.position.x, target_sp_.pose.position.y, target_sp_.pose.position.z;
+        // Get the target yaw from the quaternion in PoseStamped target_sp_
+        targetYaw = tf::getYaw(target_sp_.pose.orientation);
+        // Set the velocity and acceleration to zero
+        targetVel << 0.0, 0.0, 0.0;
+        targetAcc << 0.0, 0.0, 0.0;
+        success = true;
+    }else{
+        success = extractSetpointFromTrajectory(dt, targetPos, targetVel, targetAcc, targetYaw);
+    }
 
     if (!success) return;
 
@@ -591,22 +621,43 @@ bool geometricCtrl::loadParameters(const std::string &filename)
 
 void geometricCtrl::startTrajectory(int start)
 {
+    // Let's check if position control is requested
+    if (start == mpc4px4::FollowTraj::Request::CTRL_POSE_ACTIVE){
+        run_trajectory_ = false;
+        trajec_time_ = -1.0;
+        current_stage_ = 0;
+        pose_ctrl_ = true;
+        // Ros warn the user that the controlller is in position control mode
+        ROS_WARN("Position control mode activated");
+        return ;
+    }
+    
+    if (start == mpc4px4::FollowTraj::Request::CTRL_INACTIVE){
+        run_trajectory_ = false;
+        trajec_time_ = -1.0;
+        current_stage_ = 0;
+        pose_ctrl_ = false;
+        ROS_WARN("Controller deactivated");
+        return;
+    }
+    
     // Check if target_time_, target_pos_, target_vel_, target_acc_ are non empty
     if (target_time_.size() == 0 || target_pos_.size() == 0 || target_vel_.size() == 0 || target_acc_.size() == 0){
         ROS_ERROR("Target trajectory is empty");
         return;
     }
+
     if (run_trajectory_ && start == 1) {
         ROS_WARN("Trajectory already running");
         return;
     }
 
-    run_trajectory_ = start == 1;
-    trajec_time_ = start >= 1 ? 0.0 : -1.0;
+    pose_ctrl_ = false;
+    run_trajectory_ = start == mpc4px4::FollowTraj::Request::CTRL_TRAJ_ACTIVE;
+    trajec_time_ = (start == mpc4px4::FollowTraj::Request::CTRL_TRAJ_IDLE || start == mpc4px4::FollowTraj::Request::CTRL_TRAJ_ACTIVE) ? 0.0 : -1.0;
     current_stage_ = 0;
     // Warn print run_trajectory_, trajec_time_, current_stage_
     ROS_WARN("run_trajectory_ = %d, trajec_time_ = %f, current_stage_ = %d", run_trajectory_, trajec_time_, current_stage_);
-
 }
 
 int main(int argc, char** argv) {
@@ -617,7 +668,6 @@ int main(int argc, char** argv) {
     ros::spin();
     // controller.loadTrajectory("/home/franckdjeumou/catkin_ws/src/mpc4px4/mpc4px4/trajectory_generation/my_trajs/test_traj_gen.csv");
     // controller.loadParameters("/home/franckdjeumou/catkin_ws/src/mpc4px4/launch/gm_iris.yaml");
-
     // controller.startTrajectory(0);
     // controller.controlLoopBody();
     return 0;

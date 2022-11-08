@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-from traitlets import default
 import rospy
-import math
 import numpy as np
 
 # Import the messages we're interested in
@@ -133,6 +131,7 @@ class BasicControl:
         self.trajectory_dir = rospy.get_param("trajectories_dir", os.path.expanduser(default_traj_dir))
         # Define the controller parameters dir
         self.controller_params_dir = rospy.get_param("controller_params_dir", os.path.expanduser("~/catkin_ws/src/mpc4px4/launch/"))
+        self.ctrl_on = False
     
     def wait_for_command(self):
         """ Wait for the command to be sent """
@@ -144,6 +143,19 @@ class BasicControl:
     
     def arm(self):
         """ Arm the drone """
+        self.get_logger().warn("Arming the motors...")
+        self.command_function = lambda : self.arming_client(True)
+        def arm_callback_and_msg():
+            done = self.state.armed
+            if done:
+                self.get_logger().warn("Motors armed")
+            return done
+        self.command_succeed = arm_callback_and_msg
+        self.command_to_send = True
+    
+    def arm_nooffboard(self):
+        """ Arm the drone """
+        self.stop_offboard_mode = True
         self.get_logger().warn("Arming the motors...")
         self.command_function = lambda : self.arming_client(True)
         def arm_callback_and_msg():
@@ -182,7 +194,7 @@ class BasicControl:
         self.command_succeed = offboard_callback_and_msg
         self.command_to_send = True
     
-    def takeoff(self, z=1.0, yaw=None):
+    def takeoff(self, z=1.0, yaw=None, use_ctrl=False):
         """ Takeoff to a certain altitude
         Args:
             z: Altitude to takeoff to
@@ -208,6 +220,13 @@ class BasicControl:
                             qy=q_target[1],
                             qz=q_target[2],
                             qw=q_target[3])
+        
+        if use_ctrl:
+            self.ctrl_cmd_posestamped()
+            return
+        
+        if self.ctrl_on:
+            self.controller_off(nooffboard=True)
 
         def takeoff_callback_and_msg():
             done = abs(self.odom.pose.pose.position.z - z) <= 0.1
@@ -216,7 +235,10 @@ class BasicControl:
             return done
         self.action_completed = takeoff_callback_and_msg
     
-    def pos(self, x=None, y=None, z=None, yaw=None):
+    def ctrl_takeoff(self, z=1.0, yaw=None):
+        return self.takeoff(z, yaw, use_ctrl=True)
+    
+    def pos(self, x=None, y=None, z=None, yaw=None, use_ctrl=False):
         """Move to a certain position 
             Args:
                 x: X position
@@ -251,6 +273,13 @@ class BasicControl:
                         qy=q_target[1],
                         qz=q_target[2],
                         qw=q_target[3])
+        
+        if use_ctrl:
+            self.ctrl_cmd_posestamped()
+            return
+        
+        if self.ctrl_on:
+            self.controller_off(nooffboard=True)
 
         def pos_callback_and_msg():
             # norm between current position and setpoint x,y,z
@@ -262,7 +291,10 @@ class BasicControl:
             return done
         self.action_completed = pos_callback_and_msg
     
-    def relpos(self, dx=0, dy=0, dz=0, dyaw=0):
+    def ctrl_pos(self, x=None, y=None, z=None, yaw=None):
+        return self.pos(x, y, z, yaw, use_ctrl=True)
+    
+    def relpos(self, dx=0, dy=0, dz=0, dyaw=0, use_ctrl=False):
         """
         Move to a certain position relative to the current position (In ENU frame)
         """
@@ -276,11 +308,16 @@ class BasicControl:
         x_sp = self.odom.pose.pose.position.x + dx
         y_sp = self.odom.pose.pose.position.y + dy
         z_sp = self.odom.pose.pose.position.z + dz
-        self.pos(x_sp, y_sp, z_sp, yaw_sp)
+        self.pos(x_sp, y_sp, z_sp, yaw_sp, use_ctrl)
+    
+    def ctrl_relpos(self, dx=0, dy=0, dz=0, dyaw=0):
+        return self.relpos(dx, dy, dz, dyaw, use_ctrl=True)
     
     def land(self):
         """ Land the drone via set_mode_client"""
         self.stop_offboard_mode = True
+        if self.ctrl_on:
+            self.controller_off(nooffboard=True)
         self.get_logger().warn("Landing...")
         self.command_function = lambda : self.set_mode_client(custom_mode="AUTO.LAND")
         def land_callback_and_msg():
@@ -398,7 +435,10 @@ class BasicControl:
             req.traj_dir_csv = path_traj
             req.controller_param_yaml = path_params
             # Call the service
-            self.load_traj_and_params_client(req)
+            res = self.load_traj_and_params_client(req)
+            if not res.success:
+                self.get_logger().warn("Failed to load the trajectory and the parameters")
+                return
             # If it succeeded, the controller is ready
             # Extract the first point of the trajectory and set it as the setpoint
             if path_traj != "":
@@ -417,39 +457,56 @@ class BasicControl:
         """
         try:
             # Wait for the set_mode
-            rospy.wait_for_service("start_trajectory", timeout=2.0)
+            rospy.wait_for_service("start_trajectory", timeout=0.1) # Only wait for 0.1s
             # Create the request
             req = FollowTrajRequest()
             req.state_controller = mode
+            req.target_pose = self.setpoint
             # Call the service
-            self.start_traj_controller_client(req)
+            res = self.start_traj_controller_client(req)
+            if not res.success:
+                self.get_logger().warn("Failed to set controller mode to " + str(mode))
+                return
+
+            if mode != req.CTRL_INACTIVE:
+                self.get_logger().warn("Controller mode set to: " + str(mode))
+                self.ctrl_on = True
+            else:
+                self.get_logger().warn("Controller mode set to: CTRL_INACTIVE")
+                self.ctrl_on = False
         except rospy.ServiceException as e:
             self.get_logger().warn("Failed to call set_mode: " + str(e))
+    
+    def controller_off(self, nooffboard=False):
+        """
+            Turn off the controller
+        """
+        # Switch to offboard mode -> Essentially just send the current position as a setpoint
+        # if not nooffboard:
+        self.offboard()
+        self.controller_set_mode(FollowTrajRequest.CTRL_INACTIVE)
     
     def controller_on(self):
         """
             Turn on the controller
         """
-        self.controller_set_mode(1)
+        self.controller_set_mode(FollowTrajRequest.CTRL_TRAJ_ACTIVE)
         self.stop_offboard_mode = True
-    
-    def controller_off(self):
-        """
-            Turn off the controller
-        """
-        # Switch to offboard mode -> Essentially just send the current position as a setpoint
-        self.offboard()
-        self.controller_set_mode(0)
         
     
     def controller_idle(self):
         """
             Reset the controller
         """
-        self.controller_set_mode(2)
+        self.controller_set_mode(FollowTrajRequest.CTRL_TRAJ_IDLE)
         self.stop_offboard_mode = True
-
     
+    def ctrl_cmd_posestamped(self):
+        """
+            Callback for the controller command
+        """
+        self.controller_set_mode(FollowTrajRequest.CTRL_POSE_ACTIVE)
+        self.stop_offboard_mode = True
 
 def main():
     """Create node, parse arguments if present, and spin"""

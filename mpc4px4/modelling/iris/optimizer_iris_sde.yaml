@@ -1,0 +1,111 @@
+# Directory of the model
+vehicle_dir: /home/franckdjeumou/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris
+
+# Trajectories for training and testing the sde
+# Path the the log data
+logs_dir:
+  - /home/franckdjeumou/Documents/log_flights/iris_sitl_1.ulg
+  - /home/franckdjeumou/Documents/log_flights/iris_sitl_2.ulg
+  - /home/franckdjeumou/Documents/log_flights/iris_sitl_0.ulg
+  # More trajectories if available
+
+test_trajectory: /home/franckdjeumou/Documents/log_flights/iris_sitl_test.ulg
+
+# Model parameters
+model:
+  # An example of config file used to train the SDE model
+  learned_nominal: iris_cubic.yaml
+
+  # Number of observation
+  n_y: 13
+  # Number of control inputs
+  n_u: 4
+  # Number of hidden variables (true state of the system)
+  n_x: 13
+
+  # Diffusion term -> Ignore some of the state cause the dynamics are known
+  # x: 0, y: 1, z: 2, vx: 3, vy: 4, vz: 5, qw: 6, qx: 7, qy: 8, qz: 9, wx: 10, wy: 11, wz: 12
+  ignore_diff_indx: [3,4,5,10,11,12] # Only consider the following noise when evaluating the kl divergence
+
+  # The type of diffusion term
+  diffusion_type: constant # zero and more to come
+  amp_noise_vel: 0.001
+  amp_noise_angular_vel: 0.001
+
+  # Ground effect learning enabled?
+  ground_effect: False
+
+  # Aerodynamic drag enabled?
+  aero_drag_effect: True
+
+  # Residual term enabled?
+  residual_forces:
+    hidden_layers: [16, 16]
+    activation_fn: 'tanh'
+
+  residual_moments:
+    resisdual: True
+    mot_coeff: True
+    hidden_layers: [16, 16]
+    activation_fn: 'tanh'
+  
+  noneg_params: ['kdx', 'kdy', 'kdz', 'kh']
+
+  # Define the parameters for the SDE solver
+  sde_solver: 'stratonovich_milstein'
+
+  # Stepsize for integration
+  stepsize: 0.01
+
+  # Number of particles when sampling posterior or prior distribution
+  num_particles: 1
+
+  # The horizon of sampling in classical integration scheme
+  horizon: 5
+
+sde_loss:
+  seed: 1             # The initial seed
+  horizon: 50         # The horizon to use when training the SDE -> how far to integrate and do loss computation
+  num_particles: 5   # Number of particles when fitting the SDE -> If different to the default model num_particles
+  default_weights: 1.0e-2       # Importance of the non special parameters
+  kl: 0           # Importance of loss on the kl divergence
+  logprob: 10.0      # Importance on the weight of the logprob
+  # special_parameters:
+  #   kdx: 1.0e-5
+  #   kdy: 1.0e-5
+  #   kdz: 1.0e-5
+  #   kh: 1.0e-5
+  #   Mx: 1.e-3
+  #   My: 1.e-3
+  #   Mz: 1.e-3
+  #   Ft: 1.e-3
+
+sde_optimizer:
+  - name: scale_by_adam
+    # params:
+    #   b1: 0.999
+    #   b2: 0.9999
+  # - name: add_decayed_weights
+  #   params:
+  #     weight_decay: 0.001
+  - name: exponential_decay
+    scheduler: True
+    params:
+      init_value: -0.001 # Initial learning rate (Negative value for minimization)
+      transition_steps: 30000 # Basically the maximum number of gradient steps
+      decay_rate: 1.0 # Typically (end_value / init_value) if end_value is expected at end
+  # - name: adaptive_grad_clip
+  #   params:
+  #     clipping: 0.001
+  
+
+# Training parameters
+sde_training:
+  train_batch: 256 # The mini batch size for the training dataset
+  test_batch: 512 # The mini batch size for the training dataset
+  nepochs: 1000 # The number of epochs (full pass over the training dataset)
+  patience: 200 # The number of epochs after which to stop the learningif no improvement in solution
+  no_improvement_bound: 0.01 # The bound to detect no improvement in the loss
+  test_freq: 50 # Number of gradient steps after which to evaluate and display losses
+  save_freq: 500 # Number of gradient steps after which to save the current losses+nn
+  show_param: ['kdx', 'kdy', 'kdz', 'kh', 'Mx', 'My', 'Mz', 'Ft']

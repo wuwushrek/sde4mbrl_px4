@@ -11,7 +11,7 @@ from jaxopt import ArmijoSGD
 
 from mpc4px4.modelling.quad_model import QuadDynamics
 from mpc4px4.modelling.smoothing_data import filter_data
-from mpc4px4.helpers import parse_ulog
+from mpc4px4.helpers import parse_ulog, load_yaml
 
 import time, datetime
 import pandas as pd
@@ -82,7 +82,8 @@ def load_vector_field_from_file(data):
     """Load the vector field from a file
 
     Args:
-        dat (str or dict): The path to the file or the dictionary containing the vector field
+        dat (str or dict): The path to the file or the dictionary containing 
+            the parameters of the vector field
 
     Returns:
         TYPE: The vector field
@@ -95,17 +96,19 @@ def load_vector_field_from_file(data):
             except yaml.YAMLError as exc:
                 print(exc)
     else:
+        assert isinstance(data, dict), "The data must be a dictionary or a path to a yaml dict"
         vehicle_dict = data
     # Convert the dictionary to a jax array
     learned_params = apply_fn_to_allleaf(jnp.array, vehicle_dict['learned'])
 
     # Define the vector field
-    vector_field_pred = lambda x, u, Fres=None, Mres=None : QuadDynamics(vehicle_dict['prior']).vector_field(x, u, Fres, Mres)
+    vector_field_pred = lambda x, u, Fres=None, Mres=None, ext_thrust=jnp.array([1.,1.,1.,1.]) : \
+                                QuadDynamics(vehicle_dict['prior']).vector_field(x, u, Fres, Mres, ext_thrust)
     # Define the motor model function
     motor_model = lambda pwm_in : QuadDynamics(vehicle_dict['prior']).get_single_motor_vel(pwm_in)
     # Define the the thrust function and moment function
-    body_moment_from_actuator = lambda Oga_vect, x=None : QuadDynamics(vehicle_dict['prior']).body_moment_from_actuator(Oga_vect, x)
-    body_thrust_from_actuator = lambda Oga_vect : QuadDynamics(vehicle_dict['prior']).body_thrust_from_actuator(Oga_vect)
+    body_moment_from_actuator = lambda Oga_vect, x=None, ext_thrust=jnp.array([1.,1.,1.,1.]): QuadDynamics(vehicle_dict['prior']).body_moment_from_actuator(Oga_vect, x, ext_thrust)
+    body_thrust_from_actuator = lambda Oga_vect, ext_thrust=jnp.array([1.,1.,1.,1.]): QuadDynamics(vehicle_dict['prior']).body_thrust_from_actuator(Oga_vect, ext_thrust)
     # Now transform all these functions into Haiku functions
     _vector_field_pred = hk.without_apply_rng(hk.transform(vector_field_pred))
     _motor_model = hk.without_apply_rng(hk.transform(motor_model))
@@ -116,46 +119,16 @@ def load_vector_field_from_file(data):
     _motor_model.init(0, np.array(0.))
     _body_moment_from_actuator.init(0, np.zeros((4,)))
     _body_thrust_from_actuator.init(0, np.zeros((4,)))
-    __vector_field_pred = lambda x, u, Fres=None, Mres=None : _vector_field_pred.apply(learned_params, x, u, Fres, Mres)
+    __vector_field_pred = lambda x, u, Fres=None, Mres=None, ext_thrust=jnp.array([1.,1.,1.,1.]): \
+                                _vector_field_pred.apply(learned_params, x, u, Fres, Mres, ext_thrust)
     __motor_model = lambda pwm_in : _motor_model.apply(learned_params, pwm_in)
     # print(__motor_model(jnp.array(0.)))
-    __body_moment_from_actuator = lambda Oga_vect, x=None : _body_moment_from_actuator.apply(learned_params, Oga_vect, x)
-    __body_thrust_from_actuator = lambda Oga_vect : _body_thrust_from_actuator.apply(learned_params, Oga_vect)
+    __body_moment_from_actuator = lambda Oga_vect, x=None, ext_thrust=jnp.array([1.,1.,1.,1.]) : \
+                                    _body_moment_from_actuator.apply(learned_params, Oga_vect, x, ext_thrust)
+    __body_thrust_from_actuator = lambda Oga_vect, ext_thrust=jnp.array([1.,1.,1.,1.]): \
+                                    _body_thrust_from_actuator.apply(learned_params, Oga_vect, ext_thrust)
     return vehicle_dict, (__vector_field_pred, __motor_model, __body_moment_from_actuator, __body_thrust_from_actuator)
     
-
-# def shuffle_and_split(rng, x, num_split, shuffle=True):
-#     """Shuffle a set of data and split them into chunck of batches
-
-#     Args:
-#         rng (TYPE): A random key generator
-#         x (TYPE): The ndarray to shuffle and split
-#         num_split (TYPE): The number of split of the array
-#         shuffle (bool, optional): Specified if the data must be shuffle or not
-
-#     Returns:
-#         TYPE: Description
-#     """
-#     if not shuffle:
-#         return np.split(x, num_split)
-#     indx = np.arange(x.shape[0])
-#     rng.shuffle(indx)
-#     return np.split(x[indx,:], num_split)
-
-def load_yaml(config_path):
-    """Load the yaml file
-
-    Args:
-        config_path (str): The path to the yaml file
-
-    Returns:
-        dict: The dictionary containing the yaml file
-    """
-    yml_file = open(config_path)
-    yml_byte = yml_file.read()
-    cfg_train = yaml.load(yml_byte, yaml.SafeLoader)
-    yml_file.close()
-    return cfg_train
 
 def init_data(log_dir, cutoff_freqs, force_filtering=False):
     """Load the data from the ulog file and return the data as a dictionary.
@@ -169,7 +142,7 @@ def init_data(log_dir, cutoff_freqs, force_filtering=False):
     # Extract the current directory without the filename
     log_dir_dir = log_dir[:log_dir.rfind('/')]
     # Extract the file name without the .ulog extension
-    log_name = log_dir[log_dir.rfind('/')+1:].replace('.ulog','')
+    log_name = log_dir[log_dir.rfind('/')+1:].replace('.ulg','')
 
     # Check if a filtered version of the data already exists in the log directory
     if not force_filtering:
@@ -185,7 +158,9 @@ def init_data(log_dir, cutoff_freqs, force_filtering=False):
 
     # Load the data from the ulog file
     tqdm.write('Loading data from the ulog file..')
-    log_data = parse_ulog(log_dir)
+    # In static condition we want to avoid ground effect
+    outlier_cond = lambda d: d['z'] > 0.5
+    log_data = parse_ulog(log_dir, outlier_cond=outlier_cond)
     # Ordered state names
     name_states = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'qw', 'qx', 'qy', 'qz', 'wx', 'wy', 'wz']
     name_controls = ['m1', 'm2', 'm3', 'm4']
@@ -325,8 +300,11 @@ def train_static_model(yaml_cfg_file, output_file=None, motor_model=None):
     # Generate the JAX random key generator
     # train_rng = jax.random.PRNGKey(seed)
 
+    # Get the path the directory of this file
+    m_file_path = cfg_train['vehicle_dir']
+
     # Load the prior model parameters
-    prior_model_params = load_yaml(cfg_train['prior_model_path'])
+    prior_model_params = load_yaml(m_file_path+'/'+cfg_train['prior_file'])
     if motor_model is not None:
         prior_model_params['motor_model'] = motor_model
     motor_model = prior_model_params['motor_model']
@@ -449,10 +427,9 @@ def train_static_model(yaml_cfg_file, output_file=None, motor_model=None):
 
     # Save all the parameters of this function
     m_parameters_dict = {'params' : cfg_train, 'seed' : seed}
-    # Get the path the directory of this file
-    m_file_path = os.path.dirname(os.path.realpath(__file__))
+
     # Output directory
-    output_dir = '{}/learned_models/'.format(m_file_path)
+    output_dir = '{}/my_models/'.format(m_file_path)
 
     # Output file and if None, use the current data and time
     out_data_file = output_file+'_'+motor_model if output_file is not None else \
@@ -465,7 +442,7 @@ def train_static_model(yaml_cfg_file, output_file=None, motor_model=None):
     outfile.close()
 
     # Save the initial parameters in a yaml file
-    with open(output_dir+out_data_file+'_learned_params.yaml', 'w') as params_outfile:
+    with open(output_dir+out_data_file+'.yaml', 'w') as params_outfile:
         converted_params = convert_dict_jnp_to_dict_list(pb_params)
         # Add the prior parameters
         save_dict = {'learned' : converted_params, 'prior' : prior_model_params}
@@ -609,7 +586,7 @@ def train_static_model(yaml_cfg_file, output_file=None, motor_model=None):
                 outfile.close()
 
                 # Save the initial parameters in a yaml file
-                with open(output_dir+out_data_file+'_learned_params.yaml', 'w') as params_outfile:
+                with open(output_dir+out_data_file+'.yaml', 'w') as params_outfile:
                     converted_params = convert_dict_jnp_to_dict_list(opt_params_dict)
                     # Add the prior parameters
                     save_dict = {'learned' : converted_params, 'prior' : prior_model_params}
@@ -623,6 +600,7 @@ def train_static_model(yaml_cfg_file, output_file=None, motor_model=None):
 
 if __name__ == '__main__':
     # Parse the arguments
+    # train_static_model.py --cfg cfg_sitl_iris.yaml --output_file test --motor_model cubic
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, required=True, help='Path to the yaml configuration file')
     parser.add_argument('--output_file', type=str, default=None, help='Path to the output file')
