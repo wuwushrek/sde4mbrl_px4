@@ -9,7 +9,7 @@ import haiku as hk
 
 import pickle
 
-from mpc4px4.helpers import parse_ulog, load_yaml, update_params
+from mpc4px4.helpers import parse_ulog, load_yaml, update_params, apply_fn_to_allleaf
 
 from mpc4px4.modelling.quad_model import * 
 
@@ -214,7 +214,7 @@ def load_nominal_model(learned_params_dir, modified_params ={}):
     _model_params = learned_params['nominal']
     _static_params = learned_params['nominal']['learned_nominal']
     # SDE learned parameters
-    _sde_learned = learned_params['sde']
+    _sde_learned = apply_fn_to_allleaf(jnp.array, np.ndarray, learned_params['sde'])
     # Load the vector field from file
     _, (vector_field_fn, motor_model_fn, *_) = load_vector_field_from_file(_static_params)
     # Load the sde model given the sde learned and the vector field utils
@@ -238,7 +238,7 @@ def load_predictor_function(learned_params_dir, prior_dist=False, modified_param
     _model_params = learned_params['nominal']
     _static_params = learned_params['nominal']['learned_nominal']
     # SDE learned parameters
-    _sde_learned = learned_params['sde']
+    _sde_learned = apply_fn_to_allleaf(jnp.array, np.ndarray, learned_params['sde'])
     # Load the vector field from file
     _, (vector_field_fn, motor_model_fn, *_) = load_vector_field_from_file(_static_params)
     # Load the sde model given the sde learned and the vector field utils
@@ -264,7 +264,7 @@ def load_mpc_solver(mpc_config_dir, modified_params ={}, nominal_model = False):
     _model_params = learned_params['nominal']
     _static_params = learned_params['nominal']['learned_nominal']
     # SDE learned parameters
-    _sde_learned = learned_params['sde']
+    _sde_learned = apply_fn_to_allleaf(jnp.array, np.ndarray, learned_params['sde'])
     # Load the vector field from file
     _, (vector_field_fn, motor_model_fn, *_) = load_vector_field_from_file(_static_params)
     # Load the sde model given the sde learned and the vector field utils

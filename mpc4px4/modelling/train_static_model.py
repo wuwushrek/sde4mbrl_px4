@@ -11,7 +11,7 @@ from jaxopt import ArmijoSGD
 
 from mpc4px4.modelling.quad_model import QuadDynamics
 from mpc4px4.modelling.smoothing_data import filter_data
-from mpc4px4.helpers import parse_ulog, load_yaml
+from mpc4px4.helpers import parse_ulog, load_yaml, apply_fn_to_allleaf
 
 import time, datetime
 import pandas as pd
@@ -28,18 +28,6 @@ from jax.tree_util import tree_flatten
 import os
 
 import copy
-
-def apply_fn_to_allleaf(fn_to_apply, dict_val):
-    """Apply a function to all the leaf of a dictionary
-    """
-    res_dict = {}
-    for k, v in dict_val.items():
-        # if the value is a dictionary, convert it recursively
-        if isinstance(v, dict):
-            res_dict[k] = apply_fn_to_allleaf(fn_to_apply, v)
-        else:
-            res_dict[k] = fn_to_apply(v)
-    return res_dict
 
 def evaluate_loss_fn(loss_fn, m_params, data_eval, test_batch_size):
     """Compute the metrics for evaluation accross the data set
@@ -98,8 +86,10 @@ def load_vector_field_from_file(data):
     else:
         assert isinstance(data, dict), "The data must be a dictionary or a path to a yaml dict"
         vehicle_dict = data
+
     # Convert the dictionary to a jax array
-    learned_params = apply_fn_to_allleaf(jnp.array, vehicle_dict['learned'])
+    learned_params = apply_fn_to_allleaf(jnp.array, np.ndarray, vehicle_dict['learned'])
+    learned_params = apply_fn_to_allleaf(jnp.array, float, learned_params)
 
     # Define the vector field
     vector_field_pred = lambda x, u, Fres=None, Mres=None, ext_thrust=jnp.array([1.,1.,1.,1.]) : \
