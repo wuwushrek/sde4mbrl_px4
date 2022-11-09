@@ -1,6 +1,8 @@
 import jax
 import jax.numpy as jnp
 
+import os
+
 import numpy as np
 
 import haiku as hk
@@ -173,6 +175,7 @@ class SDEQuadModel(ControlledSDE):
 def load_trajectory(log_dir):
     """Load the trajectories from the file
     """
+    log_dir = os.path.expanduser(log_dir)
     # Extract the current directory without the filename
     log_dir_dir = log_dir[:log_dir.rfind('/')]
     # Extract the file name without the .ulog extension
@@ -205,7 +208,7 @@ def load_nominal_model(learned_params_dir, modified_params ={}):
     """ Create a function to integrate the nominal model (No noise and using static learned parameters)
     """
     # Load the pickle file
-    with open(learned_params_dir, 'rb') as f:
+    with open(os.path.expanduser(learned_params_dir), 'rb') as f:
         learned_params = pickle.load(f)
     # vehicle parameters
     _model_params = learned_params['nominal']
@@ -229,7 +232,7 @@ def load_predictor_function(learned_params_dir, prior_dist=False, modified_param
         to sample from the posterior distribution
     """
     # Load the pickle file
-    with open(learned_params_dir, 'rb') as f:
+    with open(os.path.expanduser(learned_params_dir), 'rb') as f:
         learned_params = pickle.load(f)
     # vehicle parameters
     _model_params = learned_params['nominal']
@@ -255,7 +258,7 @@ def load_mpc_solver(mpc_config_dir, modified_params ={}, nominal_model = False):
     mpc_params = _mpc_params
     learned_params_dir = mpc_params['learned_model_params']
     # Load the pickle file
-    with open(learned_params_dir, 'rb') as f:
+    with open(os.path.expanduser(learned_params_dir), 'rb') as f:
         learned_params = pickle.load(f)
     # vehicle parameters
     _model_params = learned_params['nominal']
@@ -302,7 +305,7 @@ def main_train_sde(yaml_cfg_file, output_file=None):
     test_traj_data = load_trajectory(test_traj_dir)
 
     # Construct the extra arguments for SDE
-    nominal_params_path = cfg_train['vehicle_dir'] + '/my_models/' + cfg_train['model']['learned_nominal']
+    nominal_params_path = os.path.expanduser(cfg_train['vehicle_dir'] + '/my_models/' + cfg_train['model']['learned_nominal'])
     _model_params, (vector_field_fn, motor_model_fn, *_) = load_vector_field_from_file(nominal_params_path)
     cfg_train['model']['learned_nominal'] = _model_params
 
@@ -312,7 +315,7 @@ def main_train_sde(yaml_cfg_file, output_file=None):
     #     # Output directory
     #     output_dir = '{}/learned_models/'.format(m_file_path)
     #     output_file = output_dir+ output_file # Get the path the directory of this file
-    output_file = cfg_train['vehicle_dir'] + '/my_models/' + output_file
+    output_file = os.path.expanduser(cfg_train['vehicle_dir'] + '/my_models/' + output_file)
 
     # TODO: Improve this stopping criteria
     def _improv_cond(opt_var, test_res, train_res):

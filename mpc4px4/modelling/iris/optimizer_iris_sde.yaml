@@ -1,5 +1,5 @@
 # Directory of the model
-vehicle_dir: /home/franckdjeumou/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris
+vehicle_dir: ~/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris
 
 # Trajectories for training and testing the sde
 # Path the the log data

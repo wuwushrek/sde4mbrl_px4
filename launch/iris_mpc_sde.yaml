@@ -1,5 +1,5 @@
 # Directory to the learned model parameters
-learned_model_params: '/home/franckdjeumou/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris/my_models/sitl_iris_full_sde_params.pkl'
+learned_model_params: '~/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris/my_models/sitl_iris_full_sde_params.pkl'
 
 # # # Bounds constraints setting for the states
 # # # Slack variables are created in lieu of the states --> Only for bounds constraints
@@ -34,11 +34,20 @@ input_constr:
 enforce_ubound: True
 
 
+# # Control parameters -> Weighting in the cost function
+# cost_params:
+#   uref: [0.7, 0.7, 0.7, 0.7]
+#   uerr: [0.1, 0.1, 0.1, 0.1] # m1, m2, m3, m4 1.0
+#   perr: [1000., 1000., 1000., 10., 10., 10.] # x, y, z, vx, vy, vz
+#   qerr: [1.,1., 10.] # qx, qy, qz
+#   werr: [10., 10., 0.1] # wx, wy, wz
+
+# Low values for position control
 # Control parameters -> Weighting in the cost function
 cost_params:
   uref: [0.7, 0.7, 0.7, 0.7]
   uerr: [0.1, 0.1, 0.1, 0.1] # m1, m2, m3, m4 1.0
-  perr: [1000., 1000., 1000., 10., 10., 10.] # x, y, z, vx, vy, vz
+  perr: [100., 100., 100., 10., 10., 10.] # x, y, z, vx, vy, vz
   qerr: [1.,1., 10.] # qx, qy, qz
   werr: [10., 10., 0.1] # wx, wy, wz
 

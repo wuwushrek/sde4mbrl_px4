@@ -531,10 +531,12 @@ class SDEControlROS:
 
 
 if __name__ == '__main__':
+    import os
+
     # Initialize the node
     rospy.init_node('apg_mpc_node', anonymous=True)
     # Extract the parameters
-    dir_sde_config = rospy.get_param('dir_sde', "/home/franckdjeumou/catkin_ws/src/mpc4px4/launch/iris_mpc_sde.yaml")
+    dir_sde_config = rospy.get_param('dir_sde', os.path.expanduser("~/catkin_ws/src/mpc4px4/launch/iris_mpc_sde.yaml"))
     # Seed number
     seed = rospy.get_param('seed', 0)
     # Nominal model

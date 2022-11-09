@@ -15,7 +15,7 @@ test_trajectory: /home/franckdjeumou/Documents/log_flights/iris_sitl_test.ulg
 seed: 0
 
 # Directory of prior model file. This is where the outputs are going to be saved
-vehicle_dir: /home/franckdjeumou/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris
+vehicle_dir: ~/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris
 
 # Prior model parameter path
 prior_file: iris_prior.yaml

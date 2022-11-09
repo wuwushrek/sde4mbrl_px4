@@ -90,7 +90,7 @@ def load_vector_field_from_file(data):
     """
     # Open the yaml file containing the vehicle parmas
     if isinstance(data, str):
-        with open(data, 'r') as stream:
+        with open(os.path.expanduser(data), 'r') as stream:
             try:
                 vehicle_dict = yaml.safe_load(stream)
             except yaml.YAMLError as exc:
