@@ -8,8 +8,9 @@ d = generate_distutils_setup(
 
 other_dict = dict(author='Franck Djeumou',
     author_email = 'frmbouwe@gmail.com',
-    description = 'A package for quadrotor modeling and control using Model Predictive Control',
+    description = 'A ROS package for quadrotor control using SDE-Based Model Predictive Control',
     license='GNU Public License'
 )
 
 setup(**{**d, **other_dict})
+# setproctitle

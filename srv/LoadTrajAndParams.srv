@@ -1,4 +1,3 @@
-string traj_dir_csv
 string controller_param_yaml
 ---
 bool success

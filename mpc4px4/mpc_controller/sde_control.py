@@ -1,283 +1,483 @@
+#!/usr/bin/env python
+
 import rospy
-
-from functools import partial
-import numpy as np
-
 import os
 
-# MPC seems to be faster on cpu because of the loop
-# TODO: check if this is still true, and investiage how to make it faster on GPU
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import jax 
 import jax.numpy as jnp
 
+import numpy as np
+
+from sde4mbrlExamples.rotor_uav.sde_mpc_design import load_mpc_from_cfgfile
+from sde4mbrlExamples.rotor_uav.utils import enu2ned
+
 from mpc4px4.srv import FollowTraj, FollowTrajRequest, FollowTrajResponse
-from mpc4px4.srv import LoadTrajAndParams, LoadTrajAndParamsRequest, LoadTrajAndParamsResponse
+from mpc4px4.srv import LoadTrajAndParams, LoadTrajAndParamsResponse
 from mpc4px4.msg import OptMPCState
 
-from mpc4px4.helpers import load_trajectory, quatmult, quatinv
-from mpc4px4.modelling.sde_quad_model import load_predictor_function, load_mpc_solver
-
-# Accelerated proximal gradient import
-from sde4mbrl.apg import init_apg, apg, init_opt_state
-from sde4mbrl.nsde import compute_timesteps
 
 from geometry_msgs.msg import PoseStamped
-from mavros_msgs.msg import MPCFullState, MPCMotorsCMD
+from mavros_msgs.msg import MPCMotorsCMD, MPCFullState
+
+import pymavlink.mavutil as mavutil
 
 import time
 
+import threading
 
-def parse_trajectory(_traj):
-    """ Return the array of time and concatenate the other states
-        _traj: a dictionary with the keys: t, x, y, z, vx, vy, vz, q0, q1, q2, q3, wx, wy, wz
-    """
-    # List of states in order
-    states = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'qw', 'qx', 'qy', 'qz', 'wx', 'wy', 'wz']
-    time_val = jnp.array(_traj['t'])
-    # stack the states
-    state_val = jnp.stack([_traj[state] for state in states], axis=1)
-    return time_val, state_val
+import multiprocessing
+from multiprocessing import shared_memory
 
-def extract_next_targets_from_trajectory( _indx_start, _curr_t, _time_evol, _state_evol, time_steps, time_steps_spacing):
-    """ Extract the next targets from the trajectory
-        _indx_start:            An index guaranteed to be prior of the current time step
-        _curr_t:                The current time step
-        _time_evol:             The time evolution of the trajectory
-        _state_evol:            The state evolution of the trajectory
-        time_steps:             The array of time steps along the control horizon
-        time_steps_spacing:     The spacing equivalent of time_steps wrt to the trajectory
-    """
-    assert _time_evol.shape[0] >= 2, "The trajectory must have at least 2 points"
-    # Get the index of the next time step
-    _curr_time_range = jnp.array([ _time_evol[jnp.minimum(i+_indx_start, _time_evol.shape[0]-1)] for i in range(time_steps_spacing[-1]+1)])
-    indx_next = _indx_start + jnp.searchsorted(_curr_time_range, _curr_t+time_steps[0])
-    # Obtain the next time steps
-    _tnext_array = _curr_t + time_steps
-    _indx_array = indx_next - 1 + time_steps_spacing
-    # Clipping the indexes and time steps
-    _tnext_array = jnp.clip(_tnext_array, _time_evol[0], _time_evol[-1])
-    _indx_array = jnp.clip(_indx_array, 0, _time_evol.shape[0]-2)
-    # A function to extrapolate the next state
-    extr_fn = lambda _i, _t: _state_evol[_i] + (_state_evol[_i+1] - _state_evol[_i]) * (_t - _time_evol[_i]) / (_time_evol[_i+1] - _time_evol[_i])
-    return jax.vmap(extr_fn)(_indx_array, _tnext_array), jnp.clip(indx_next-1, 0, _time_evol.shape[0]-1)
+import setproctitle
 
 
-def extract_convenience(_time_evol, time_steps):
-    """ From the time evolution of the trajectory, extract the time steps spacing that matches the one
-        imposed by the control horizon and the mpc controller
-    """
-    _dt_traj = np.mean(np.diff(_time_evol))
-    _time_steps_spacing = np.round(time_steps / _dt_traj).astype(jnp.int32)
-    # _time_steps_spacing = _time_steps_spacing.at[0].set(0)
-    _time_steps_spacing[0] = 0
-    return np.cumsum(_time_steps_spacing), _dt_traj
 
-
-# Define a cost function
-# The goal is to takeoff to 3.0m of altitude and stay there
-def cost_f(x, u, extra_args, wcoeffs):
-    """ x is a (N, 13) array
-    u is a (N, 4) array
-    The cost function is a scalar
-    """
-    xref = extra_args
-    # Compute the error on the quaternion
-    qerr = jnp.sum(jnp.square(quatmult(x[6:10], quatinv(xref[6:10], jnp), jnp)[1:]) * jnp.array(wcoeffs['qerr']))
-    # Compute the error on the rest of the states
-    perr = jnp.sum(jnp.square(x[:6] - xref[:6]) * jnp.array(wcoeffs['perr']))
-    # Compute the error on the angular velocity
-    werr = jnp.sum(jnp.square(x[10:] - xref[10:]) * jnp.array(wcoeffs['werr']))
-    # Compute the cost
-    uerr = jnp.sum(jnp.square(u - jnp.array(wcoeffs['uref'])) * jnp.array(wcoeffs['uerr']))
-    return perr + qerr + werr + uerr
-
-def reset_apg(y, cfg_dict, construct_opt_params, pol_fn=None):
-    """ Reset the optimizer based on the current value of the quadrotor state
-    """
-    if pol_fn is not None:
-        u_init = pol_fn(y)
-    else:
-        u_init = jnp.ones(4) * jnp.array(cfg_dict['cost_params']['uref'])
-    opt_init = construct_opt_params(u=u_init)
-    opt_state = init_opt_state(opt_init, cfg_dict['apg_mpc'])
-    return opt_state
-
-def apg_mpc(xt, rng, past_solution, target_x, multi_cost_sampling, proximal_fn, cfg_dict, _sde_learned):
-    """ Run one step of the MPC controller
-        Return the state of the controller at the next time step
-    """
-    # Split the key
-    rng_next, rng = jax.random.split(rng)
-
-    red_cost_f = lambda _x, _u, extra_args: cost_f(_x, _u, extra_args, cfg_dict['cost_params'])
-    cost_xt = lambda u_params: multi_cost_sampling(_sde_learned, xt, u_params, rng, 
-                                    red_cost_f, extra_cost_args=target_x)[0]
-
-    # Shift the solution so that it can be exploited
-    opt_state = init_apg(past_solution.x_opt, cost_xt, 
-                        cfg_dict['apg_mpc'],
-                        momentum=past_solution.momentum,
-                        stepsize=past_solution.avg_stepsize)
-
-    new_opt_state = apg(opt_state, cost_xt, cfg_dict['apg_mpc'],
-                            proximal_fn=proximal_fn)
-
-    # Compute the next states of the system
-    _, vehicle_states = multi_cost_sampling(_sde_learned, xt, new_opt_state.x_opt, rng, red_cost_f, extra_cost_args=target_x)
-    vehicle_states = vehicle_states[0] # Only first sample of vehicle states
-
-    uopt = new_opt_state.x_opt[:, :4]
-    # project uopt -> No need here
-    uopt = jnp.clip(uopt, 0.0, 1.0)
-    # More memory effiicient by not returning the full state
-    new_solution = new_opt_state._replace(x_opt=new_opt_state.x_opt.at[:-1].set(new_opt_state.x_opt[1:]))
-    # new_solution = new_opt_state
-    # We rescale back the engine torque data
-    return rng_next, uopt, vehicle_states, new_solution
-
+# Profiler
+#     with jax.profiler.trace("trace_mpc_t", create_perfetto_link=True):
+#         _,self._uopt, _, self.opt_state = self._apg_mpc(self._dummy_x, init_rng, self.opt_state, self._dummy_xref)
+#         self._uopt.block_until_ready()
+    
+#     # # Profiler
+#     # with jax.profiler.trace("trace_mpc", create_perfetto_link=True):
+#     #     self.opt_state = self._reset_fn(self._dummy_x)
+#     #     self.opt_state.num_steps.block_until_ready()
 
 class SDEControlROS:
     """ A ROS node to control the quadcopter using my sde-based approach
     """
-    def __init__(self, dir_sde_config, seed=0, nominal_model=False, report_dt=0.2):
+    def __init__(self,):
         """ Constructor """
+
         # Info that the controller started
         rospy.loginfo("Starting the SDE controller")
 
-        # Define the parameters
-        self._cfg_dict =None
-        self._sde_learned = None
+        # Constants used below
+        # the control automata has 3 states: 'idle', 'pos', 'traj'. idle performs pistion control to reach the initial state of the trajectory
+        self.control_state_dict = {'idle': 0, 'pos': 1, 'traj': 2, 'none' : -1}
+        self.name_control_state_dict = {v : k for k, v in self.control_state_dict.items()}
+        self.last_traj_time = 0.0
+        self.last_time_state_info = None
+        self._target_x = self.dummy_state()
 
-        # Random number generator
-        self._rng = jax.random.PRNGKey(seed)
-
-        # Load the model and the mpc solver
-        self.load_model(dir_sde_config, self._rng, nominal_model)
-
-        # Current trajectory information
-        self._traj = None
-        self._time_evol = None
-        self._time_steps_spacing = None
-        self.extract_ts = None
-
-        # # TODO: Clean this
-        # self.last_sampled_time = None
-
-        # State evolution of the trajectory
-        self._current_stage = 0
+        # Trajectory and position control parameters
         self._run_trajectory = False
         self._trajec_time = -1.0
-
-        # Target state
-        self._target_sp = None
-        self._target_x = self.dummy_state()
         self._pos_control = False
+        self._test_mode = False
+        self.mpc_on = MPCMotorsCMD.MPC_OFF
+        self.reset_done = False
 
-        # # The current state of the quadcopter
-        self._curr_state = None
-        self._last_time = rospy.Time.now()
-        # self._last_time_display = rospy.Time.now()
+        # Store the parameters of this node
+        self.init_node_params()
 
-        # Subscriber for the full state of the quadcopter
-        self._state_sub = rospy.Subscriber("mavros/mpc_full_state/state", MPCFullState, self.mpc_state_callback, queue_size=1)
+        # Load the mpc solver fromc config file
+        self.load_mpc_models()
+
+        # First define the shareable variables
+        self.multi_process_shared_variables()
+
+        # Start the mpc process after loading the mpc
+        self.start_mpc_process()
+
+        # [TODO] Create a mavlink connection -> Do this at last maybe
+        self.init_mavlink_connection()
 
         # Publisher for the setpoint
         self._setpoint_pub = rospy.Publisher("mavros/desired_setpoint", PoseStamped, queue_size=10)
-        # Publisher for the control input
-        self._control_pub = rospy.Publisher("mavros/mpc_motors_cmd/cmd", MPCMotorsCMD, queue_size=1)
-        # Publisher for the mpc state
+
         self._opt_state_pub = rospy.Publisher("mavros/mpc_opt_state/state", OptMPCState, queue_size=10)
 
         # Service to set the trajectory
-        self._set_traj_srv = rospy.Service("set_trajectory_and_params", LoadTrajAndParams, self.set_trajectory_callback)
+        self._set_traj_srv = rospy.Service("set_trajectory_and_params", LoadTrajAndParams, self.initialize_mpc_callback)
+
         # Service to start the trajectory
         self._start_traj_srv = rospy.Service("start_trajectory", FollowTraj, self.start_trajectory_callback)
 
         # Create a timer to publish on _opt_state_pub
-        self._timer = rospy.Timer(rospy.Duration(report_dt), self.publish_opt_state)
+        self._timer = rospy.Timer(rospy.Duration(self.mpc_report_dt), self.publish_opt_state)
+
     
-    def set_trajectory_callback(self, req):
+    def init_node_params(self):
+        """ Initialize the node parameters from launch file param
+        """
+        self.seed = rospy.get_param("~seed", 0)
+        self.config_dir = rospy.get_param("~config_dir", "")
+        self.traj_ctrl_dir = rospy.get_param("~traj_ctrl", "")
+        self.sp_ctrl_dir = rospy.get_param("~sp_ctrl", "")
+        self.mpc_report_dt = rospy.get_param("~mpc_report_dt", 0.2)
+        self.mav_addr = rospy.get_param("~addr_mavlink_state_msg", "localhost:14998")
+        # Pretty print the parameters
+        rospy.loginfo("Node parameters:")
+        rospy.loginfo("Seed: {}".format(self.seed))
+        rospy.loginfo("Config directory: {}".format(self.config_dir))
+        rospy.loginfo("Trajectory controller directory: {}".format(self.traj_ctrl_dir))
+        rospy.loginfo("Setpoint controller directory: {}".format(self.sp_ctrl_dir))
+        rospy.loginfo("MPC logging dt: {}".format(self.mpc_report_dt))
+        rospy.loginfo("Mavlink address: {}".format(self.mav_addr))
+    
+    def init_mavlink_connection(self):
+        """ Initialize the mavlink connection and start the thread to listen to the messages
+        """
+        rospy.logwarn('Initializing the mavlink connection')
+        self.mav = mavutil.mavlink_connection('udpin:'+self.mav_addr)
+        rospy.logwarn('Waiting for the first MPC message')
+        _msg = self.mav.recv_match(blocking=True, timeout=1.0)
+        if _msg is None:
+            rospy.logwarn('No message received, make sure the mavlink router is running')
+            self.last_time_state_info = _msg.time_usec
+        else:
+            self.last_time_state_info = None
+            rospy.logwarn('First MPC State message received')
+            # Log warn the message
+            rospy.logwarn(_msg)
+        
+        # Start the thread to listen to the messages
+        self.mpc_state_thread = threading.Thread(target=self.handle_mpc_state_msg)
+        self.mpc_state_thread.start()
+
+    def handle_mpc_state_msg(self):
+        """ Listen on node.mav_addr to obtain the MPC_STATE message.
+            Then, use the MPC_STATE to compute the next control input and immediately send it to the drone.
+            Save the setpoint that is going to be sent over ros.
+            This function is called in a separate thread at startup.
+        """
+        recv_time_out = 0.1
+        # Loop to receive messages
+        while not rospy.is_shutdown():
+            # Get the state
+            msg = self.mav.recv_match(blocking=True, timeout=recv_time_out)
+            # If the message is not None, then call the callback
+            # The call back essentially notify the mpc solver then extract the next sequences of control inputs from 
+            # the last solved mpc problem
+            if msg is not None:
+                self.mpc_state_callback(msg)
+
+    def load_mpc_models(self):
+        """ Load from given configuration file the MPC solvers
+        """
+        rospy.logwarn("################################################################")
+        rospy.logwarn("Trajectory provided --> MPC will be used as a trajectory tracker")
+        traj_ctrl_path = self.config_dir + "/" + self.traj_ctrl_dir
+        self.state_from_traj, self.reset_traj_mpc, self.mpc_traj_solver, self.traj_uopt, \
+                self.default_traj_opt_state, self.traj_cfg_dict = self.load_single_mpc(traj_ctrl_path)
+        assert self.state_from_traj is not None, "The state_from_traj function should be not None, Have you provided a trajectory?"
+
+        # Stire the dt time step
+        self._dt_usec = self.traj_cfg_dict['_time_steps'][0] * 1e6 # in usec
+        self.tn = float(self.traj_cfg_dict['cost_params']['uref'][0])
+        
+        rospy.logwarn("################################################################")
+        rospy.logwarn("Position controller provided --> MPC will be used as a position controller")
+        pos_ctrl_path = self.config_dir + "/" + self.sp_ctrl_dir
+        _state_from_pos, self.reset_pos_mpc, self.mpc_pos_solver, self.pos_uopt,\
+                    self.default_pos_opt_state, self.pos_cfg_dict = self.load_single_mpc(pos_ctrl_path)
+        assert _state_from_pos is None, "The state_from_pos function should be None, Have you provided a position controller?"
+    
+    
+    def control_automata(self):
+        """ Define the ways the control switch between trajectory and position controller
+        """
+        # Check about 
+        # dt is the time step since the last call of this function
+        if self._pos_control:
+            self._target_x = np.array([self._target_sp.pose.position.x, self._target_sp.pose.position.y, self._target_sp.pose.position.z,
+                                      0., 0., 0., 
+                                      self._target_sp.pose.orientation.w, self._target_sp.pose.orientation.x, self._target_sp.pose.orientation.y, self._target_sp.pose.orientation.z,
+                                      0., 0., 0.], 
+                                    dtype=np.float32
+                                )
+            return self.control_state_dict['pos']
+        
+        if self._trajec_time < 0.0:
+            # We are not running the trajectory
+            return self.control_state_dict['none']
+        
+        # If we get there it means current trajec_time >= 0 but the trajectory is not running
+        if not self._run_trajectory: # If we are not running the trajectory
+            # Get the initial state
+            self._trajec_time = 0
+            self._target_x = np.array(self.state_from_traj(self._trajec_time), dtype=np.float32)
+            return self.control_state_dict['idle']
+        
+        # We are running the trajectory
+        _current_time = time.time()
+        if self._trajec_time == 0: # If we are starting the trajectory
+            # Start measuring the time for the trajectory
+            self.last_traj_time = _current_time
+            self._trajec_time = 0.0000001 # Small value so that next time we don't enter this if
+        else:
+            # Save the time elapsed since the beginning of the trajectory
+            self._trajec_time = (_current_time - self.last_traj_time)
+        return self.control_state_dict['traj']
+    
+
+    def mpc_state_callback(self, msg):
+        """ Callback for the full state of the quadcopter.
+            This is also where the main control computation is going to be done.
+            So we compute control when we receive new position
+                Args:
+                    msg (MPCFullState): The full state of the quadcopter in ned coordinate
+        """
+        # Let's proceed to publish the control action
+        self.curr_time = rospy.Time.now()
+
+        # Get the current time
+        _curr_time = time.time()
+        # Time elapsed since the last call -> meaning last mpc state info
+        self.dt_state_info = _curr_time - self.last_time_state_info if self.last_time_state_info is not None else 0.0
+        # Update the last time received state info
+        self.last_time_state_info = _curr_time
+
+        # Transform the state into numpy array
+        curr_state = np.array([msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz, msg.qw, msg.qx, msg.qy, msg.qz, msg.wx, msg.wy, msg.wz], dtype=np.float32)
+        
+        # Get the time the sample was taken
+        self.sample_time = msg.time_usec
+
+        # Get the current control state
+        self._control_state = self.control_automata()
+
+        # Store information needed by the mpc process in the shared memory
+        # Maybe Lock before modifying these information
+        with self._curr_state_lock:
+            # Store the current state
+            self.curr_state_shr[:] = curr_state
+            # Store the sample time for the current state
+            self.info_mpc_pre_shr[self.key2index_pre['sample_time_prempc']] = msg.time_usec
+            # Store the current control state
+            self.info_mpc_pre_shr[self.key2index_pre['ctrl_state']] = self._control_state
+            # Store the duration used in trajectory optimization
+            self.info_mpc_pre_shr[self.key2index_pre['duration']] = self._trajec_time
+            if self._control_state != self.control_state_dict['traj']:
+                # Store the target setpoint
+                self.target_setpoint_shr[:] = self._target_x
+
+
+        # Send a signal to wake up the mpc process
+        self._mpc_event.set()
+
+        # Proceed to Check from the shared memory the optimal control action and current time
+        # Extract the frist index to start
+        with self._u_opt_lock:
+            # Extract the latest computed control
+            _u_opt = np.array(self.u_opt_shr)
+            # Extract the optimization info
+            self._optimizer_info = np.array(self.opt_info_shr)
+        
+        # Now proceed to parse and publish the control action
+        tsample_mpc = self._optimizer_info[self.key2index_info_mpc['sample_time_posmpc']]
+        if tsample_mpc <= 0:
+            self.dt_state_callback = time.time() - _curr_time
+            # Ros log warn
+            rospy.logwarn("The sample time for the mpc is not valid -> No MPC solution computed yet")
+            return 
+
+        # Find the index of the control action to use
+        _index = int((self.sample_time - tsample_mpc) / self._dt_usec)
+        if _index > _u_opt.shape[0]:
+            # log ros error message
+            rospy.logerr("The index of the control action is greater than the size of the control action array")
+            # Pick the last control
+            _index = _u_opt.shape[0] - 1
+
+        self._uopt = _u_opt[_index:(_index + MPCMotorsCMD.HORIZON_MPC)]
+        if self._uopt.shape[0] < MPCMotorsCMD.HORIZON_MPC:
+            # We duplicate the last control action and append it to match the horizon
+            self._uopt = np.concatenate((self._uopt, np.tile(self._uopt[-1], (MPCMotorsCMD.HORIZON_MPC - self._uopt.shape[0], 1))), axis=0)
+
+        # Check if there is a need to publish the control action
+        if self._control_state == self.control_state_dict['none']:
+            # No need to publish the control action
+            self.dt_state_callback = time.time() - _curr_time
+            return
+
+        # Publish the control action
+        self.pub_cmd_setpoint(self.curr_time, self.sample_time)
+
+        # # # Publish the target setpoint
+        # self.pub_reference_pose(_curr_ros_time)
+
+        # COmpute the time elapsed in this function
+        self.dt_state_callback = time.time() - _curr_time
+
+
+    def mpc_process_fn(self):
+        """ Main loop in the MPC process
+        """
+        # Set the process name
+        setproctitle.setproctitle("mpc_process")
+
+        # Rospy warn 
+        rospy.logwarn("Starting and Setting up the MPC process")
+
+        # Initialize random key generator
+        rng_ctrl = jax.random.PRNGKey(self.seed)
+
+        # Split the rng key into 3 keys
+        rng_ctrl, rng_traj, rng_pos = jax.random.split(rng_ctrl, 3)
+
+        # Reset both the trajectory and position mpc
+        x0 = self.dummy_state()
+        opt_state_traj = self.reset_traj_mpc(x=self.dummy_state(), rng=rng_traj, xdes=x0)
+        opt_state_pos = self.reset_pos_mpc(x=x0, rng=rng_pos, xdes=x0)
+
+        # COmpute the control solution at least once
+        self.mpc_traj_solver(x0, rng_traj, opt_state_traj, curr_t=0.0, xdes=x0)
+        self.mpc_pos_solver(x0, rng_pos, opt_state_pos, curr_t=0.0, xdes=x0)
+
+        # Warn that the MPC process is ready
+        rospy.logwarn("MPC process is ready, looping")
+
+        # A boolean to check if we need to wait for the event
+        wait_event = True
+
+        # THe current controller
+        _curr_ctrl = None
+
+        # _ctime = time.time()
+
+        # Loop until the node is killed
+        while True:
+            # Wait for the event to be set with a timeout
+            if wait_event:
+                self._mpc_event.wait(0.1)
+            
+            # Extract the useful information from the shared memory
+            with self._curr_state_lock:
+                # Store the current state
+                curr_state = np.array(self.curr_state_shr)
+                # Store the sample time for the current state
+                sample_time = self.info_mpc_pre_shr[self.key2index_pre['sample_time_prempc']]
+                # Store the current control state
+                _control_state = self.info_mpc_pre_shr[self.key2index_pre['ctrl_state']]
+                # Store the duration used in trajectory optimization
+                _trajec_time = self.info_mpc_pre_shr[self.key2index_pre['duration']]
+                if _control_state != self.control_state_dict['traj']:
+                    # Store the target setpoint
+                    _target_x = np.array(self.target_setpoint_shr)
+            
+            # Check if the control state is set to None
+            _perf_time = time.time()
+            if _curr_ctrl is None:
+                # Reset both controllers
+                opt_state_traj = self.reset_traj_mpc(x=curr_state, rng=rng_traj, xdes=curr_state)
+                opt_state_pos = self.reset_pos_mpc(x=curr_state, rng=rng_pos, xdes=curr_state)
+
+            if _control_state == self.control_state_dict['none']:
+                _curr_ctrl = 'pos'
+                _uopt, opt_state_pos, rng_pos, _ = self.mpc_pos_solver(curr_state, rng_pos, opt_state_pos, curr_t=0.0, xdes=enu2ned(curr_state, np))
+            elif _control_state == self.control_state_dict['traj']:
+                _curr_ctrl = 'traj'
+                _uopt, opt_state_traj, rng_traj, _ = self.mpc_traj_solver(curr_state, rng_traj, opt_state_traj, curr_t=_trajec_time, xdes=curr_state)
+            elif _control_state == self.control_state_dict['pos']:
+                _curr_ctrl = 'pos'
+                _uopt, opt_state_pos, rng_pos, _ = self.mpc_pos_solver(curr_state, rng_pos, opt_state_pos, curr_t=0.0, xdes=_target_x)
+            else:
+                raise ValueError("Unknown control state: {}".format(_control_state))
+            _uopt.block_until_ready()
+            _perf_time = time.time() - _perf_time
+            
+            # Do some processing before saving the control
+            _uopt = np.array(_uopt)
+            _opt_state = opt_state_pos if _curr_ctrl == 'pos' else opt_state_traj
+
+            # if time.time() - _ctime > 2.0:
+            #     rospy.logwarn("MPC process: {} control, solve time: {:.3f} ms".format(_curr_ctrl, _perf_time*1000.0))
+            #     _ctime = time.time()
+
+            with self._u_opt_lock:
+                # Store the control
+                self.u_opt_shr[:] = _uopt
+                self.opt_info_shr[self.key2index_info_mpc['sample_time_posmpc']] = sample_time
+                self.opt_info_shr[self.key2index_info_mpc['solveTime']] = _perf_time
+                self.opt_info_shr[self.key2index_info_mpc['avg_linesearch']] = float (_opt_state.avg_linesearch)
+                self.opt_info_shr[self.key2index_info_mpc['stepsize']] = float (_opt_state.stepsize)
+                self.opt_info_shr[self.key2index_info_mpc['num_steps']] = float (_opt_state.num_steps)
+                self.opt_info_shr[self.key2index_info_mpc['grad_norm']] = float (_opt_state.grad_sqr)
+                self.opt_info_shr[self.key2index_info_mpc['avg_stepsize']] = float (_opt_state.avg_stepsize)
+                self.opt_info_shr[self.key2index_info_mpc['cost0']] = float (_opt_state.init_cost)
+                self.opt_info_shr[self.key2index_info_mpc['costT']] = float (_opt_state.opt_cost)
+    
+
+    def initialize_mpc_callback(self, req):
         """ Service callback to set the trajectory """
         res = LoadTrajAndParamsResponse()
-        # We only update this controller when this controller is not on
-        # TODO: Load this in a separate thread?
+        
         if self._run_trajectory or self._pos_control:
             # warn the user of the problem
             rospy.logwarn("Cannot set the trajectory because the controller is running")
             res.success = False
             return res
-        
-        if req.controller_param_yaml != "":
-            # We have to realod the model and moc solver
-            try:
-                self.load_model(req.controller_param_yaml, self._rng, nominal_model=self._nominal_model)
-            except Exception as e:
-                rospy.logerr("Cannot load the model and the MPC solver")
-                rospy.logerr(e)
-                res.success = False
-                return res
 
-        if req.traj_dir_csv != "":
-            try:
-                traj_dict = load_trajectory(req.traj_dir_csv)
-                self._time_evol, self._traj = parse_trajectory(traj_dict)
-                self._traj_last_time = float(self._time_evol[-1])
-                self._traj_last_stage = len(self._time_evol) - 1
-                self._init_traj_pts = np.array(self._traj[0])
-                self._end_traj_pts = np.array(self._traj[-1])
-                # We need to compute other necessary information
-                self._time_steps_spacing, _ = extract_convenience(self._time_evol, self._time_steps)
-                self._time_steps_spacing = np.array(self._time_steps_spacing)   
-                self._extract_ts = np.cumsum(np.array(self._time_steps))
-                # Lower and compile the function to extract the next states
-                start = time.time()
-                self.extract_targets_jit = jax.jit(lambda idx, t: extract_next_targets_from_trajectory(idx, t, self._time_evol, self._traj, self._extract_ts, self._time_steps_spacing)).lower(self._current_stage, 0.0).compile()
-                end = time.time()
-                rospy.loginfo("Time to compile the trajectory extraction function: {}".format(end-start))
-                start = time.time()
-                states, _ = self.extract_targets_jit(self._current_stage, 0.2)
-                states.block_until_ready()
-                end = time.time()
-                rospy.loginfo("Time to run the trajectory extraction function: {}".format(end-start))
-            except Exception as e:
-                rospy.logerr("Cannot load the trajectory: {}".format(e))
-                res.success = False
-                return res
-        
+        # Controller initialized
+        self.mpc_on = MPCMotorsCMD.MPC_RESET
+
+        # Send this message 5 times to make sure that the controller is reset
+        for _ in range(5):
+            self.pub_cmd_setpoint(self.curr_time, self.sample_time)
+            rospy.sleep(0.01)
+        # Log that the reset onboard is done
+        rospy.loginfo("Reset the controller done")
+
+        self.reset_done = True
         res.success = True
         return res
     
+
     def start_trajectory_callback(self, req):
         """ Service callback to start the trajectory """
         res = FollowTrajResponse()
+        # If the controller is not reset yet, we cannot 
+        if not self.reset_done and req.state_controller != FollowTrajRequest.CTRL_INACTIVE:
+            rospy.logwarn("Cannot start the trajectory because the controller is not reset: Do controller_init before!")
+            res.success = False
+            return res
+
+        # Get the requested mode
         mode = req.state_controller
         self._target_sp = req.target_pose
-        # Check if position control is requested
-        if mode == FollowTrajRequest.CTRL_POSE_ACTIVE:
+
+        if mode == FollowTrajRequest.CTRL_TEST:
+            # We are in test mode
+            self.mpc_on = MPCMotorsCMD.MPC_TEST
+            self._test_mode = True
             self._pos_control = True
             self._run_trajectory = False
             self._trajec_time = -1.0
-            self._current_stage = 0
+            # ros warn the user
+            rospy.logwarn("Test mode activated")
+            res.success = True
+            return res
+
+        # Check if position control is requested
+        if mode == FollowTrajRequest.CTRL_POSE_ACTIVE:
+            self.mpc_on = MPCMotorsCMD.MPC_ON
+            self._pos_control = True
+            self._test_mode = False
+            self._run_trajectory = False
+            self._trajec_time = -1.0
             # ros warn the user
             rospy.logwarn("Position control activated")
             res.success = True
             return res
 
         if mode == FollowTrajRequest.CTRL_INACTIVE:
+            self.reset_done = False
+            self.mpc_on = MPCMotorsCMD.MPC_OFF
+            self._test_mode = False
             self._pos_control = False
             self._run_trajectory = False
             self._trajec_time = -1.0
-            self._current_stage = 0
+
+            # Send off mode to the onboard controller
+            for _ in range(5):
+                self.pub_cmd_setpoint(self.curr_time, self.sample_time)
+                rospy.sleep(0.01)
+
             # ros warn the user
             rospy.logwarn("Controller deactivated")
             res.success = True
-            return res
-        
-        # Check if the trajectory is set
-        if self._traj is None or self._time_evol is None:
-            rospy.logerr("The trajectory is not set")
-            res.success = False
             return res
         
         # Check if rtrajectory is already running
@@ -287,264 +487,217 @@ class SDEControlROS:
             return res
         
         self._pos_control = False
+        self._test_mode = False
         self._run_trajectory = mode == FollowTrajRequest.CTRL_TRAJ_ACTIVE
         self._trajec_time = 0.0 if (mode == FollowTrajRequest.CTRL_TRAJ_IDLE or mode == FollowTrajRequest.CTRL_TRAJ_ACTIVE) else -1.0
-        self._current_stage = 0
+        self.mpc_on = MPCMotorsCMD.MPC_ON
+        
         # ros warn the user
-        rospy.logwarn("run_trajectory_ = {}, trajec_time_ = {}, current_stage_ = {}".format(self._run_trajectory, self._trajec_time, self._current_stage))
+        rospy.logwarn("run_trajectory_ = {}, trajec_time_ = {}".format(self._run_trajectory, self._trajec_time))
         res.success = True
         return res
-
-    def trajectory_automata(self, dt):
-        """ This function is called when the trajectory is running """
-        if self._trajec_time < 0.0:
-            return False
-        
-        # What is the current time in trajectory
-        current_time_val = self._trajec_time
-        next_time_val = current_time_val + dt
-
-        if next_time_val >= self._traj_last_time:
-            # We are done and will send the last state
-            self._trajec_time = self._traj_last_time
-            self._current_stage = self._traj_last_stage
-            self._target_x = self._end_traj_pts
-            self.target_states = self.jit_setpoints_from_state(self._target_x)
-            return True
-        
-        if not self._run_trajectory:
-            self._target_x = self._init_traj_pts
-            self.target_states = self.jit_setpoints_from_state(self._target_x)
-            # We are not running the trajectory
-            self._trajec_time = 0.0
-            self._current_stage = 0
-            return True
-        
-        # We are running the trajectory -> extract the next targets
-        self.target_states,  next_stage = self.extract_targets_jit(self._current_stage, current_time_val)
-        self._target_x = np.array(self.target_states[0, :])
-
-        self._current_stage = int(next_stage)
-        self._trajec_time = next_time_val
-        return True
-    
-    def display_optimizer_state(self):
-        m_dict = {'avg_linesearch': self.opt_state.avg_linesearch, 
-                'stepsize' : self.opt_state.stepsize,
-                'num_steps' : self.opt_state.num_steps, 
-                'grad_norm': self.opt_state.grad_sqr,
-                'avg_stepsize': self.opt_state.avg_stepsize, 
-                'cost0': self.opt_state.init_cost, 
-                'costT': self.opt_state.opt_cost,
-                'solveTime': self.mpc_solve_time}
-        rospy.loginfo(' | '.join([ '{} : {:.3e}'.format(k,v) for k, v in m_dict.items() ]))
         
     def publish_opt_state(self, _):
         """ The callback to publish the state of the MPC
         """
+        # We extract information from self._optimizer_info
         # Build the message 
         msg = OptMPCState()
         msg.stamp = rospy.Time.now()
-        msg.avg_linesearch = self.opt_state.avg_linesearch
-        msg.avg_stepsize = self.opt_state.avg_stepsize
-        msg.avg_momentum = self.opt_state.avg_momentum
-        msg.stepsize = self.opt_state.stepsize
-        msg.num_steps = int(self.opt_state.num_steps)
-        msg.grad_norm = self.opt_state.grad_sqr
-        msg.cost_init = self.opt_state.init_cost
-        msg.opt_cost = self.opt_state.opt_cost
-        msg.solve_time = self.mpc_solve_time
-        msg.cost_final = self.opt_state.curr_cost
+        msg.avg_linesearch = self._optimizer_info[self.key2index_info_mpc['avg_linesearch']]
+        msg.avg_stepsize = self._optimizer_info[self.key2index_info_mpc['avg_stepsize']]
+        msg.stepsize = self._optimizer_info[self.key2index_info_mpc['stepsize']]
+        msg.num_steps = int(self._optimizer_info[self.key2index_info_mpc['num_steps']])
+        msg.grad_norm = self._optimizer_info[self.key2index_info_mpc['grad_norm']]
+        msg.cost_init = self._optimizer_info[self.key2index_info_mpc['cost0']]
+        msg.opt_cost = self._optimizer_info[self.key2index_info_mpc['costT']]
+        msg.solve_time = self._optimizer_info[self.key2index_info_mpc['solveTime']]
+        msg.callback_dt = self.dt_state_callback
+        msg.state_dt = self.dt_state_info
+        msg.ctrl_state = self.name_control_state_dict[self._control_state]
+
         # Publish the message
         self._opt_state_pub.publish(msg)
-
-    def mpc_state_callback(self, msg):
-        """ Callback for the full state of the quadcopter.
-            This is also where the main control computation is going to be done.
-            So we compute control when we receive new position
-        """
-        _perf_time = time.time()
-
-        # Get the current time
-        curr_time = rospy.Time.now()
-        
-        # COmpute the delta time
-        dt = (curr_time - self._last_time).to_sec()
-
-        # Update the last time
-        self._last_time = curr_time
-
-        # Get the time the sample was taken
-        sample_time = msg.time_usec
-
-        # Get the current state from the msg
-        self._curr_state = np.array([msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz, msg.qw, msg.qx, msg.qy, msg.qz, msg.wx, msg.wy, msg.wz], dtype=np.float32)
-
-        # Check if we need to send cmd point to the quadcopter
-        success = False
-
-        if self._pos_control:
-            # We are in position control mode
-            self._target_x = np.array([self._target_sp.pose.position.x, self._target_sp.pose.position.y, self._target_sp.pose.position.z,
-                                      0., 0., 0., 
-                                      self._target_sp.pose.orientation.w, self._target_sp.pose.orientation.x, self._target_sp.pose.orientation.y, self._target_sp.pose.orientation.z,
-                                      0., 0., 0.], dtype=np.float32)
-            # Get the set of next setpoints
-            self.target_states = self.jit_setpoints_from_state(self._target_x)
-            success = True
-        else:
-            success = self.trajectory_automata(dt)
-
-        if not success:
-            # Reset the mpc controller
-            # self.opt_state = self._reset_fn(self._target_x)
-            return
-        
-        # Compute the optimal control
-        self._rng, self._uopt, self.states, self.opt_state = self._apg_mpc(self._curr_state, self._rng, self.opt_state, self.target_states)
-        self._uopt.block_until_ready()
-        self._uopt = np.array(self._uopt)
-
-         # Total performance
-        self.mpc_solve_time = time.time() - _perf_time
-
-        # Publish the control
-        self.pub_cmd_setpoint(curr_time, sample_time)
-
-        # Publish the target setpoint
-        self.pub_reference_pose(curr_time)
-        
-        # _perf_total = time.time() - _perf_time
-        # if _perf_total > 0.015:
-        #     rospy.logwarn("MPC is not running in real time: {} > 0.015".format(_perf_total))
     
-    def pub_reference_pose(self, tpub):
-        """ Publish the reference pose """
-        # Construct the pose message
-        pose = PoseStamped()
-        pose.header.stamp = tpub + rospy.Duration(self._dt_usec*1e-6)
-        pose.header.frame_id = "map"
-        pose.pose.position.x = self._target_x[0]
-        pose.pose.position.y = self._target_x[1]
-        pose.pose.position.z = self._target_x[2]
-        # Fill in the orientation
-        pose.pose.orientation.w = self._target_x[6]
-        pose.pose.orientation.x = self._target_x[7]
-        pose.pose.orientation.y = self._target_x[8]
-        pose.pose.orientation.z = self._target_x[9]
+    # def pub_reference_pose(self, tpub):
+    #     """ Publish the reference pose """
+    #     # Construct the pose message
+    #     pose = PoseStamped()
+    #     pose.header.stamp = tpub + rospy.Duration(self._dt_usec*1e-6)
+    #     pose.header.frame_id = "map"
+    #     pose.pose.position.x = self._target_x[0]
+    #     pose.pose.position.y = self._target_x[1]
+    #     pose.pose.position.z = self._target_x[2]
+    #     # Fill in the orientation
+    #     pose.pose.orientation.w = self._target_x[6]
+    #     pose.pose.orientation.x = self._target_x[7]
+    #     pose.pose.orientation.y = self._target_x[8]
+    #     pose.pose.orientation.z = self._target_x[9]
 
-        # Publish the message
-        self._setpoint_pub.publish(pose)
-    
+    #     # Publish the message
+    #     self._setpoint_pub.publish(pose)
+
     def pub_cmd_setpoint(self, curr_time, sample_time):
         """ Publish the command setpoint """
-        # Construct the motors cmd message
-        cmd_v = MPCMotorsCMD()
-        cmd_v.time_usec = int(curr_time.to_nsec() / 1000)
-        cmd_v.time_init = sample_time
-        cmd_v.dt = self._dt_usec
-        cmd_v.m1 = self._uopt[:cmd_v.HORIZON_MPC,0]
-        cmd_v.m2 = self._uopt[:cmd_v.HORIZON_MPC,1]
-        cmd_v.m3 = self._uopt[:cmd_v.HORIZON_MPC,2]
-        cmd_v.m4 = self._uopt[:cmd_v.HORIZON_MPC,3]
+        self.mav.mav.mpc_motors_cmd_send(
+            time_usec = int(curr_time.to_nsec() / 1000), 
+            time_init = sample_time, 
+            dt = self._dt_usec, 
+            tb = self._uopt[:MPCMotorsCMD.HORIZON_MPC,0], 
+            mx = self._uopt[:MPCMotorsCMD.HORIZON_MPC,1], 
+            my = self._uopt[:MPCMotorsCMD.HORIZON_MPC,2], 
+            mz = self._uopt[:MPCMotorsCMD.HORIZON_MPC,3], 
+            tn = self.tn, 
+            mpc_on = self.mpc_on
+        )
+    
 
-        # Publish the message
-        self._control_pub.publish(cmd_v)
+    def multi_process_shared_variables(self):
+        """ Define and store the variables tht are going to be saved between this process and 
+            the mpc process
+        """
+        state = self.dummy_state()
+        # Create a shared array for the current state
+        self._curr_state_shr = shared_memory.SharedMemory(create=True, size=state.nbytes)
+        self.curr_state_shr = np.ndarray(state.shape, dtype=state.dtype, buffer=self._curr_state_shr.buf)
+
+        # # Create a numpy array from the shared memory
+        # Create a shared array for the control returned for the mpc
+        size_u = max(self.traj_uopt.nbytes, self.pos_uopt.nbytes)
+        u_zero = self.traj_uopt if self.traj_uopt.nbytes > self.pos_uopt.nbytes else self.pos_uopt
+        self._u_opt_shr = shared_memory.SharedMemory(create=True, size=size_u)
+        self.u_opt_shr = np.ndarray(u_zero.shape, dtype=u_zero.dtype, buffer=self._u_opt_shr.buf)
+
+        # Data needed for the mpc solver
+        info_mpc_pre = np.array([0.0, 0.0, self.control_state_dict['none']])
+        self.key2index_pre = {'sample_time_prempc': 0, 'duration': 1, 'ctrl_state': 2}
+        self._info_mpc_pre_shr = shared_memory.SharedMemory(create=True, size=info_mpc_pre.nbytes)
+        self.info_mpc_pre_shr = np.ndarray(info_mpc_pre.shape, dtype=info_mpc_pre.dtype, buffer=self._info_mpc_pre_shr.buf)
+
+        # Data needed after the mpc solver -> information about solving the mpc
+        # Create a shared array for storing optimization info from the mpc
+        opt_state = self.default_traj_opt_state
+        info_mpc = np.array([-1.0, opt_state.avg_linesearch, opt_state.stepsize, opt_state.num_steps, opt_state.grad_sqr, 
+                                opt_state.avg_stepsize, opt_state.init_cost, opt_state.opt_cost, 0.0], dtype=np.float32)
+        self.key2index_info_mpc = {'sample_time_posmpc': 0, 'avg_linesearch': 1, 'stepsize': 2, 
+                                    'num_steps': 3, 'grad_norm': 4, 'avg_stepsize': 5, 'cost0': 6, 'costT': 7, 'solveTime': 8}
+        self._opt_info_shr = shared_memory.SharedMemory(create=True, size=info_mpc.nbytes)
+        self.opt_info_shr = np.ndarray(info_mpc.shape, dtype=info_mpc.dtype, buffer=self._opt_info_shr.buf)
+        self._optimizer_info = info_mpc
+
+        # Create a shared memory for the target setpoint
+        self._target_setpoint_shr = shared_memory.SharedMemory(create=True, size=state.nbytes)
+        self.target_setpoint_shr = np.ndarray(state.shape, dtype=state.dtype, buffer=self._target_setpoint_shr.buf)
+
+        # Create the Locks
+        self._curr_state_lock = multiprocessing.Lock()
+        self._u_opt_lock = multiprocessing.Lock()
+
+        # Create the event to notify the mpc process
+        self._mpc_event = multiprocessing.Event()
+    
+    def clean_shared_variables(self):
+        """ Delete the shared variables
+        """
+        self._curr_state_shr.close()
+        self._curr_state_shr.unlink()
+        self._u_opt_shr.close()
+        self._u_opt_shr.unlink()
+        self._opt_info_shr.close()
+        self._opt_info_shr.unlink()
+        self._target_setpoint_shr.close()
+        self._target_setpoint_shr.unlink()
+        self._info_mpc_pre_shr.close()
+        self._info_mpc_pre_shr.unlink()
+    
+
+    def load_single_mpc(self, mpc_dir):
+        """ Load a single MPC model from the given directory
+        """
+        x0 = self.dummy_state()
+        cfg_dict, (m_reset, m_mpc), state_from_traj, _ = load_mpc_from_cfgfile(mpc_dir, convert_to_enu=True)
+
+        # Now let's jit and lower state_from_traj
+        _state_from_traj = None
+        t_init = 0.01
+        if state_from_traj is not None:
+            rospy.logwarn("Compiling the state_from_traj function")
+            start_time = time.time()
+            # Define the reset function
+            _state_from_traj = jax.jit(state_from_traj).lower(t_init).compile()
+            rospy.logwarn("Compilation of the reset function took {} seconds".format(time.time() - start_time))
+
+        # Now let's jit and lower the reset function
+        rng_seed = jax.random.PRNGKey(self.seed)
+        rospy.logwarn("Compiling the reset function")
+        start_time = time.time()
+        # Define the reset function
+        _reset_traj_mpc = jax.jit(m_reset).lower(x=x0, rng=rng_seed, xdes = x0).compile()
+        rospy.logwarn("Compilation of the reset function took {} seconds".format(time.time() - start_time))
+        # Proceed to a first evaluation of the reset function and get the comutation time
+        start_time = time.time()
+        _default_traj_opt_state = _reset_traj_mpc(x=x0, rng=rng_seed, xdes = x0)
+        _default_traj_opt_state.yk.block_until_ready()
+        rospy.logwarn("First evaluation of the reset function took {} seconds".format(time.time() - start_time))
+
+        # Now let's jit and lower the mpc function
+        rospy.logwarn("Compiling the mpc function")
+        start_time = time.time()
+        _mpc_traj_solver = jax.jit(m_mpc).lower(x0, rng_seed, _default_traj_opt_state, curr_t=t_init, xdes = x0).compile()
+        rospy.logwarn("Compilation of the mpc function took {} seconds".format(time.time() - start_time))
+        # Proceed to a first evaluation of the mpc function and get the comutation time
+        start_time = time.time()
+        traj_uopt, _, _, _ = _mpc_traj_solver(x0, rng_seed, _default_traj_opt_state, curr_t=t_init, xdes = x0)
+        traj_uopt.block_until_ready()
+        _traj_uopt = np.array(traj_uopt)
+        rospy.logwarn("First evaluation of the mpc function took {} seconds".format(time.time() - start_time))
+        return (_state_from_traj, _reset_traj_mpc, _mpc_traj_solver, _traj_uopt, _default_traj_opt_state, cfg_dict)
+    
+    def start_mpc_process(self):
+        """ Start the mpc process """
+        # Create the process
+        self.mpc_process = multiprocessing.Process(target=self.mpc_process_fn, name='mpc_process')
+        # Start the process
+        self.mpc_process.start()
+    
+    def stop_mpc_process(self):
+        """ Stop the mpc process """
+        # Terminate the process
+        self.mpc_process.terminate()
+        # Join the process
+        self.mpc_process.join()
+        # Clean the shared memory
+        self.clean_shared_variables()
+    
+    def stop_state_callback_thread(self):
+        """ Close the mavlink connection
+        """
+        # self.mpc_state_thread.terminate()
+        self.mpc_state_thread.join()
     
     def dummy_state(self):
         """ Return a dummy state """
         return np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     
-    def setpoints_from_state(self, state):
-        """ Return the setpoints from the state """
-        # Duplicate the state over the time horizon of the MPC
-        xref = jnp.tile(state, (self._cfg_dict['horizon'], 1))
-        return xref
-
-    def load_model(self, dir_sde_config, init_rng, nominal_model=False):
-        """ Load the model and the mpc solver.
-            Compile the necessary jax functions to be used later for control
-        """
-        # Load the configuration
-        # Path configuration file
-        (_sde_learned, cfg_dict), multi_cost_sampling, vmapped_prox, construct_opt_params = \
-            load_mpc_solver(dir_sde_config, modified_params={}, nominal_model=nominal_model)
-        
-        # Proximal function -> projection on the bound constraints
-        proximal_fn = None if vmapped_prox is None else lambda x, stepsize=None: vmapped_prox(x)
-        pol_fn = None # Used later for the MPC
-        self._nominal_model = nominal_model
-
-        # Print the configuration file
-        rospy.logwarn("Configuration file:")
-        print(cfg_dict)
-
-        # COmpute and save the time step
-        self._time_steps = np.array(compute_timesteps(cfg_dict['model']), dtype=np.float32)
-        # TODO: Change the type to be uint16_t or uint8_t
-        self._dt_usec = self._time_steps[0] * 1e6
-        # ROSWARN the time step
-        rospy.logwarn("Time step: {}".format(self._time_steps))
-
-        # Save the configuration
-        self._cfg_dict = cfg_dict
-        self._sde_learned = _sde_learned
-
-        # We need to compile these functions ahead on time on the CPU
-        # Otherwise, the first call to the MPC will be very slow
-        # We use the dummy state to compile the functions
-        self._dummy_x = self.dummy_state()
-        self._dummy_xref = self.setpoints_from_state(self._dummy_x)
-        # ROS log the size of the reference trajectory
-        rospy.loginfo("Size of the reference trajectory: {}".format(self._dummy_xref.shape))
-        # We compile the reset function
-
-        rospy.logwarn("Compiling the reset function")
-        start_time = time.time()
-        # Define the reset function
-        self._reset_fn = jax.jit(lambda y: reset_apg(y, self._cfg_dict, construct_opt_params, pol_fn=pol_fn)).lower(self._dummy_x).compile()
-        rospy.logwarn("Compilation of the reset function took {} seconds".format(time.time() - start_time))
-
-        # Get the initial state of the optimizer
-        start_time = time.time()
-        self.opt_state = self._reset_fn(self._dummy_x)
-        self.opt_state.num_steps.block_until_ready()
-        rospy.logwarn("Reset of the optimizer took {} seconds".format(time.time() - start_time))
-
-        # Log warn the compilation of the MPC function
-        rospy.logwarn("Compiling the MPC function")
-        start_time = time.time()
-        # Define the apg_mpc
-        self._apg_mpc = jax.jit(lambda xt, rng, past_solution, target_x: apg_mpc(xt, rng, past_solution, target_x, multi_cost_sampling, proximal_fn, self._cfg_dict, self._sde_learned)).lower(self._dummy_x, init_rng, self.opt_state, self._dummy_xref).compile()
-        rospy.logwarn("Compilation of the MPC function took {} seconds".format(time.time() - start_time))
-
-        start_time = time.time()
-        _,_, _, self.opt_state = self._apg_mpc(self._dummy_x, init_rng, self.opt_state, self._dummy_xref)
-        self.opt_state.num_steps.block_until_ready()
-        self.mpc_solve_time = time.time() - start_time
-        rospy.logwarn("First call to the MPC took {} seconds".format(self.mpc_solve_time))
-        self.display_optimizer_state()
-
-        # Jit the function to get the setpoint
-        self.jit_setpoints_from_state = jax.jit(self.setpoints_from_state).lower(self._dummy_x).compile()
-        self.jit_setpoints_from_state(self._dummy_x)
-
 
 if __name__ == '__main__':
     import os
 
     # Initialize the node
-    rospy.init_node('apg_mpc_node', anonymous=True)
-    # Extract the parameters
-    dir_sde_config = rospy.get_param('dir_sde', os.path.expanduser("~/catkin_ws/src/mpc4px4/launch/iris_mpc_sde.yaml"))
-    # Seed number
-    seed = rospy.get_param('seed', 0)
-    # Nominal model
-    nominal_model = rospy.get_param('nominal_model', False)
-    # Looging freq of the MPC
-    mpc_logging_freq = rospy.get_param('mpc_log_dt', 0.2)
+    rospy.init_node('sde_control', anonymous=True)
 
     # Create the MPC node
-    mpc_solver = SDEControlROS(dir_sde_config, seed, nominal_model, mpc_logging_freq)
+    mpc_solver = SDEControlROS()
+
+    # Spin
     rospy.spin()
+
+    # Terminate and join the thread
+    mpc_solver.stop_state_callback_thread()
+    
+    # Stop the mpc process
+    mpc_solver.stop_mpc_process()
+
+    # Shutdown
+    rospy.signal_shutdown("MPC control node is terminated")
 

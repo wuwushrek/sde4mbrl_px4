@@ -198,6 +198,12 @@ class geometricCtrl
         std::vector<Eigen::Vector3d> target_acc_; // trajectory in ENU
         std::vector<double> target_yaw_; // YAW
 
+        // Store the trajectory path to find in the configuration file
+        std::string trajectory_path_;
+        // Store the configuration file for the controller
+        std::string config_dir_;
+        std::string config_name_;
+
         // Desired pose setpoint if not in trajectory mode
         geometry_msgs::PoseStamped target_sp_;
         bool pose_ctrl_;
@@ -222,7 +228,6 @@ class geometricCtrl
         double Kpos_x_, Kpos_y_, Kpos_z_, Kvel_x_, Kvel_y_, Kvel_z_;
         int ctrl_mode_;
         bool feedthrough_enable_;
-        std::string config_file_;
 
         Eigen::Vector3d Kpos_, Kvel_, D_;
         Eigen::Vector3d g_;

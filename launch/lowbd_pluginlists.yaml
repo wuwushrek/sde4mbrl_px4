@@ -1,0 +1,19 @@
+plugin_blacklist: []
+
+
+plugin_whitelist:
+- local_position
+- imu
+- setpoint_position
+- sys_time
+- sys_status
+- setpoint_raw
+- param
+- sys_status
+- command
+- mpc_full_state
+- mpc_motors_cmd
+- vision_pose_estimate
+- onboard_computer_status
+- companion_process_status
+#- 'sys_*'

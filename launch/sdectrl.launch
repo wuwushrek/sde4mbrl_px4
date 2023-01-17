@@ -1,0 +1,11 @@
+<!-- Launch file for the geometric controller iris_sitl_sp_mpc.yaml --> 
+<launch>
+    <node pkg="mpc4px4" type="sde_control.py" name="sde_control" output="screen">
+        <param name="addr_mavlink_state_msg" value="localhost:14998" />
+        <param name="config_dir" value="~/catkin_ws/src/mpc4px4/launch/" />
+        <param name="traj_ctrl" value="iris_sitl_traj_mpc.yaml" />
+        <param name="sp_ctrl" value="iris_sitl_posctrl_mpc.yaml" />
+        <param name="seed" type="int" value="10" />
+        <param name="mpc_report_dt" type="double" value="0.2" />
+    </node>
+</launch>

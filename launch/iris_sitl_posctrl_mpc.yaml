@@ -1,59 +1,66 @@
 # Directory to the learned model parameters
-learned_model_params: '~/catkin_ws/src/mpc4px4/mpc4px4/modelling/iris/my_models/sitl_iris_full_sde_params.pkl'
+learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_models/hexa_lin_lownoise_cubic_full_sde_params.pkl
 
+# x: 0, y: 1, z: 2, vx: 3, vy: 4, vz: 5, qw: 6, qx: 7, qy: 8, qz: 9, wx: 10, wy: 11, wz: 12
 # # # Bounds constraints setting for the states
 # # # Slack variables are created in lieu of the states --> Only for bounds constraints
 # # # These are the hidden states for which bound constraints are imposed
 # state_constr:
 #   # It represents the indexes of the constrained state variables
-#   # state_id: [1, 3, 4]
+#   state_id: [3, 4, 5]
 #   # # Penalty term for the slack variables
 #   # state_penalty: [1., 0.1, 10.] # 0.1
 #   # # slack constraints
 #   # # Set of min max values for the slack id above
 #   # state_bound: [[7, 12], [12.5,15], [-0.7, 0.7]] #.inf, -.inf
-#   state_id: [1, 4]
+#   # state_id: [1, 4]
 #   # Penalty term for the slack variables
-#   state_penalty: [1, 100] # 0.1
+#   state_penalty: [2, 2, 2] # 0.1
 #   # slack constraints
 #   # Set of min max values for the slack id above
-#   state_bound: [[8.0, 10.0], [-0.7, 0.7]] #.inf, -.inf
+#   state_bound: [[-0.5, 0.5], [-0.5, 0.5], [-0.5, 0.5] ] #.inf, -.inf
 #   # Enforce bound constraints via proximal ?
 #   # Doing so augment the number of variables of the problem by the number of
 #   # slack constraints
 #   slack_proximal: True
-# input constraints
+
+state_constr:
+  # It represents the indexes of the constrained state variables
+  state_id: [10, 11]
+  # Penalty term for the slack variables
+  state_penalty: [1, 1] # 0.1
+  # slack constraints
+  # Set of min max values for the slack id above
+  state_bound: [[-0.5, 0.5], [-0.5, 0.5]] #.inf, -.inf
+  # Enforce bound constraints via proximal ?
+  # Doing so augment the number of variables of the problem by the number of
+  # slack constraints
+  slack_proximal: True
 
 input_constr:
   # pwm_1, pwm_2, pwm_3, pwm_4
   input_id: [0, 1, 2, 3]
-  input_bound: [[0., 1.], [0.,1.], [0., 1.], [0., 1.]]
-
+  input_bound: [[0., 1.], [-1.,1.], [-1., 1.], [-1., 1.]]
 
 # Enforce the control inputs bound during learning value function
 enforce_ubound: True
 
-
-# # Control parameters -> Weighting in the cost function
-# cost_params:
-#   uref: [0.7, 0.7, 0.7, 0.7]
-#   uerr: [0.1, 0.1, 0.1, 0.1] # m1, m2, m3, m4 1.0
-#   perr: [1000., 1000., 1000., 10., 10., 10.] # x, y, z, vx, vy, vz
-#   qerr: [1.,1., 10.] # qx, qy, qz
-#   werr: [10., 10., 0.1] # wx, wy, wz
-
-# Low values for position control
-# Control parameters -> Weighting in the cost function
 cost_params:
-  uref: [0.7, 0.7, 0.7, 0.7]
-  uerr: [0.1, 0.1, 0.1, 0.1] # m1, m2, m3, m4 1.0
-  perr: [100., 100., 100., 10., 10., 10.] # x, y, z, vx, vy, vz
-  qerr: [1.,1., 10.] # qx, qy, qz
-  werr: [10., 10., 0.1] # wx, wy, wz
+  uref: [0.7, 0, 0, 0]
+  uerr: [0.001, 0.1, 0.1, 0.1] # m1, m2, m3, m4 1.0
+  perr: [10., 10., 10., 1.0, 1.0, 1.0] # x, y, z, vx, vy, vz
+  qerr: [0.1, 0.1, 2.0] # qx, qy, qz
+  werr: [0.1, 0.1, 0.1] # wx, wy, wz
+  # # Control slew constrainys
+  u_slew_coeff: [0.01, 0.01, 0.01, 0.01]
+  # # State slew coefficient. Only vx, vy, vz, wx, wy, wz are accepted. pos and quat can be set by penalizing velocity and w
+  # state_slew_active: ['vx', 'vy', 'wx', 'wy']
+  # state_slew_coeffs: [0.0001, 0.0001, 0.001, 0.001]
 
 
 # Number of particles when sampling the SDE
 num_particles: 1
+
 
 horizon: 40
 num_short_dt: 40
@@ -66,11 +73,11 @@ discount: 1.0
 # Optimizer parameters
 apg_mpc:
   # The intial step size in case no linsearh arguments are provided
-  stepsize: 1.
+  stepsize: 10.
 
   # The maximum number of gradient updates
-  max_iter: 100
-  max_no_improvement_iter: 100
+  max_iter: 1000
+  max_no_improvement_iter: 50
 
   # The adaptive coefficient to scale the momentum. nill values mean
   # that it is not used and rather beta_k = k /(k+3) is used as classical acceleration momentum
@@ -82,10 +89,10 @@ apg_mpc:
 
   # # The stoppng criteria of the algorithm based on gradient norm
   atol: 1.0e-8 # The minimum cost difference or 'zero' cost value
-  rtol: 1.0e-5
+  rtol: 1.0e-6
 
   linesearch:
-    max_stepsize: 10.0 # The maximum admissible step size
+    max_stepsize: 0.1 # The maximum admissible step size
     coef: 0.01 # The agressiveness coefficient. The smaller the larger step size in the optimization
     decrease_factor: 0.7 # The decrease factor when performing the armijo linesearch
     increase_factor: 1.3 # The increase factor at each new gradient descent iteration

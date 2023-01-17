@@ -3,6 +3,24 @@
 using namespace Eigen;
 using namespace std;
 
+std::string expand_user(std::string path) {
+  if (not path.empty() and path[0] == '~') {
+    assert(path.size() == 1 or path[1] == '/');  // or other error handling
+    char const* home = getenv("HOME");
+    if (home or ((home = getenv("USERPROFILE")))) {
+      path.replace(0, 1, home);
+    }
+    else {
+      char const *hdrive = getenv("HOMEDRIVE"),
+        *hpath = getenv("HOMEPATH");
+      assert(hdrive);  // or other error handling
+      assert(hpath);
+      path.replace(0, 1, std::string(hdrive) + hpath);
+    }
+  }
+  return path;
+}
+
 // Constructor
 geometricCtrl::geometricCtrl(const ros::NodeHandle &nh)
     :   nh_(nh)
@@ -26,8 +44,9 @@ geometricCtrl::geometricCtrl(const ros::NodeHandle &nh)
     nh_.param<int>("ctrl_mode", ctrl_mode_, ERROR_QUATERNION);
     nh_.param<bool>("feedthrough_enable", feedthrough_enable_, false);
     // Path to a configuration file
-    nh_.param<std::string>("config_file", config_file_, "");
-
+    nh_.param<std::string>("config_dir", config_dir_, "");
+    nh_.param<std::string>("config_name", config_name_, "");
+    trajectory_path_ = "";
 
     last_time_ = ros::Time::now();
     trajec_time_ = -1.0;
@@ -42,26 +61,29 @@ geometricCtrl::geometricCtrl(const ros::NodeHandle &nh)
     D_ << dx_, dy_, dz_;
 
     // Check if the configuration file is empty
-    if (config_file_.empty()){
+    if (config_name_.empty()){
         ROS_WARN("No configuration file specified");
     } else{
         // Then load the parameters
-        if (loadParameters(config_file_) == false)
+        if (loadParameters(config_name_) == false)
         {
             ROS_ERROR("Failed to load the parameters");
         }
     }
 
     // Initialize the subscribers
-    mav_full_state_sub_ = nh_.subscribe("mavros/mpc_full_state/state", 1, &geometricCtrl::mavStateCallback, this);
+    mav_full_state_sub_ = nh_.subscribe("/mavros/mpc_full_state/state", 1, &geometricCtrl::mavStateCallback, this);
     
     // Publishers
-    cmdPub_ = nh_.advertise<mavros_msgs::AttitudeTarget>("mavros/setpoint_raw/attitude", 1);
-    setpointPub_ = nh_.advertise<geometry_msgs::PoseStamped>("mavros/desired_setpoint", 10);
+    cmdPub_ = nh_.advertise<mavros_msgs::AttitudeTarget>("/mavros/setpoint_raw/attitude", 1);
+    setpointPub_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/desired_setpoint", 10);
 
     // Starting the required services
-    setTrajectorySrv_ = nh_.advertiseService("set_trajectory_and_params", &geometricCtrl::setTrajectoryAndParams, this);
-    startTrajectorySrv_ = nh_.advertiseService("start_trajectory", &geometricCtrl::triggerTrajectory, this);
+    setTrajectorySrv_ = nh_.advertiseService("/set_trajectory_and_params", &geometricCtrl::setTrajectoryAndParams, this);
+    startTrajectorySrv_ = nh_.advertiseService("/start_trajectory", &geometricCtrl::triggerTrajectory, this);
+
+    // Log out that the controller is ready
+    ROS_INFO("Geometric controller is ready");
 }
 
 
@@ -71,17 +93,6 @@ geometricCtrl::~geometricCtrl() {
 
 bool geometricCtrl::setTrajectoryAndParams(mpc4px4::LoadTrajAndParams::Request &req, mpc4px4::LoadTrajAndParams::Response &res)
 {
-    // Check if traj_dir_csv is an empty string
-    if (!req.traj_dir_csv.empty())
-    {
-        // First load the trajectory
-        if (loadTrajectory(req.traj_dir_csv) == false)
-        {
-            res.success = false;
-            ROS_ERROR("Failed to load the trajectory");
-            return false;
-        }
-    }
     if (!req.controller_param_yaml.empty())
     {
         // Then load the parameters
@@ -91,7 +102,10 @@ bool geometricCtrl::setTrajectoryAndParams(mpc4px4::LoadTrajAndParams::Request &
             ROS_ERROR("Failed to load the parameters");
             return false;
         }
+    }else {
+        ROS_WARN("No configuration file specified... skipping");
     }
+
     res.success = true;
     return true;
 }
@@ -208,6 +222,10 @@ bool geometricCtrl::extractSetpointFromTrajectory(const double dt,
 
     // Check if the next time step is out of the trajectory and return the last setpoint
     if (next_time_val >= target_time_.back()) {
+        // Warn that the trajectory is finished
+        if (current_stage_ != target_time_.size() - 1){
+            ROS_WARN("Trajectory finished");
+        }
         targetPos = target_pos_.back();
         targetVel = target_vel_.back();
         targetAcc = target_acc_.back();
@@ -407,13 +425,17 @@ Eigen::Vector4d geometricCtrl::geometric_attcontroller(
 }
 
 
-bool geometricCtrl::loadTrajectory(const std::string &filename) {
+bool geometricCtrl::loadTrajectory(const std::string &_filename) {
+    
     // Cannot update trajectory if already running
     if (trajec_time_ >= 0.0){
         ROS_WARN("Cannot update trajectory while running or idling");
         ROS_WARN("Ignoring the update !!!!");
         return true;
     }
+
+    // Append filename and gains_dir to get the full path
+    std::string filename = expand_user(_filename);
 
     // Load the csv file
     std::ifstream file(filename);
@@ -494,8 +516,11 @@ bool geometricCtrl::loadTrajectory(const std::string &filename) {
     return true;
 }
 
-bool geometricCtrl::loadParameters(const std::string &filename)
+bool geometricCtrl::loadParameters(const std::string &_filename)
 {
+    // Append filename and gains_dir to get the full path
+    std::string filename = expand_user(config_dir_ + "/" + _filename);
+
     std::ifstream file(filename);
     if (!(file.is_open() && file.good())) {
         ROS_ERROR("Could not open parameters file: %s", filename.c_str());
@@ -602,7 +627,6 @@ bool geometricCtrl::loadParameters(const std::string &filename)
         // Warn the user that the parameter is updated
         ROS_WARN("Updated feedthrough_enable to %d", feedthrough_enable_);
     }
-
     // Initialize array version of some of these parameters
     g_ << 0.0, 0.0, -gravity_;
     Kpos_ << -Kpos_x_, -Kpos_y_, -Kpos_z_;
@@ -616,11 +640,27 @@ bool geometricCtrl::loadParameters(const std::string &filename)
     current_stage_ = 0;
     run_trajectory_ = false;
 
+    // Trajectory path
+    if (config["trajectory_path"]) {
+        trajectory_path_ = config["trajectory_path"].as<std::string>();
+        // Warn the user that the parameter is updated
+        ROS_WARN("Updated trajec_path to %s", trajectory_path_.c_str());
+        // Load the trajectory
+        if (!loadTrajectory(trajectory_path_)) {
+            ROS_ERROR("Failed to load trajectory");
+            return false;
+        }
+    }
+
     return true;
 }
 
 void geometricCtrl::startTrajectory(int start)
 {
+    if (start == mpc4px4::FollowTraj::Request::CTRL_TEST){
+        return;
+    }
+
     // Let's check if position control is requested
     if (start == mpc4px4::FollowTraj::Request::CTRL_POSE_ACTIVE){
         run_trajectory_ = false;
@@ -662,13 +702,9 @@ void geometricCtrl::startTrajectory(int start)
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "geometric_controller");
-    ros::NodeHandle nh;
+    ros::NodeHandle nh("~");
 
     geometricCtrl controller(nh);
     ros::spin();
-    // controller.loadTrajectory("/home/franckdjeumou/catkin_ws/src/mpc4px4/mpc4px4/trajectory_generation/my_trajs/test_traj_gen.csv");
-    // controller.loadParameters("/home/franckdjeumou/catkin_ws/src/mpc4px4/launch/gm_iris.yaml");
-    // controller.startTrajectory(0);
-    // controller.controlLoopBody();
     return 0;
 }

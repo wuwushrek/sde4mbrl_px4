@@ -17,7 +17,10 @@ def handle_user_input(node):
 
     # Create autocomplete based on node functions
     # Get relevant node function
-    node_functions = ['arm', 'disarm', 'takeoff', 'land', 'pos', 'relpos', 'offboard', 'controller_init', 'controller_on', 'controller_off', 'controller_idle']
+    node_functions = ['arm', 'disarm', 'takeoff', 'land', 'pos', 'relpos', 'offboard', 'controller_init', 
+                        'controller_on', 'controller_off', 'controller_idle', 'controller_test',
+                        'set_box', 'rm_box', 'ctrl_pos']
+                        
     completer = WordCompleter(node_functions, ignore_case=True)
     while True:
         try:
@@ -32,20 +35,28 @@ def handle_user_input(node):
             node.userin = False
             # Generate a help message with function prototype
             if user_input == 'help':
-                print('Available commands:')
+                print('Available commands: [Spacing between arguments is important]')
                 print('Available functions:')
-                print('arm()')
-                print('disarm()')
-                print('takeoff(alt)')
-                print('land()')
-                print('pos(x,y,z,yaw)')
-                print('relpos(dx,dy,dz,dyaw)')
-                print('offboard()')
-                print('controller_init(path_traj,path_params)')
+                print('arm')
+                print('disarm')
+                print('takeoff alt | takeoff alt=1.0')
+                print('land')
+                print('pos x y z yaw | pos x=0.0 y=0.0 z=0.0 yaw=0.0')
+                print('relpos dx dy dz dyaw | relpos dx=0.0 dy=0.0 dz=0.0 dyaw=0.0')
+                print('offboard')
+                print('controller_init config_name | controller_init config_name=config_name.yaml')
+                print('controller_on')
+                print('controller_off')
+                print('controller_idle')
+                print('controller_test')
+                print('set_box  x=0.2 y=0.2 z=0.2')
+                print('rm_box')
+                print('ctrl_pos x=0.0 y=0.0 z=0.0 yaw=0.0')
                 is_last_valid = True
                 node.userin = False
                 print('\n')
                 continue
+
             # Parse the user input to get function and arguments
             # The user input should be like: "function_name argument1 argument2 argument3=..."
             # The function name and arguments are separated by a space
@@ -57,8 +68,10 @@ def handle_user_input(node):
                 print('Function {} does not exist'.format(function_name))
                 is_last_valid = False
                 continue
+
             # Get the function from the node
             function = getattr(node, function_name)
+
             # Separate the arguments from the values
             args_ = []
             kwargs_ = {}
@@ -69,6 +82,7 @@ def handle_user_input(node):
                     kwargs_[key] = type_fn(value)
                 else:
                     args_.append(type_fn(arg))
+                    
             # print(args, kwargs_, function)
             # Call the function with the arguments
             function(*args_, **kwargs_)
