@@ -31,17 +31,15 @@ from multiprocessing import shared_memory
 
 import setproctitle
 
+# # Profiler
+# with jax.profiler.trace("trace_mpc_t", create_perfetto_link=True):
+#     _,self._uopt, _, self.opt_state = self._apg_mpc(self._dummy_x, init_rng, self.opt_state, self._dummy_xref)
+#     self._uopt.block_until_ready()
 
-
-# Profiler
-#     with jax.profiler.trace("trace_mpc_t", create_perfetto_link=True):
-#         _,self._uopt, _, self.opt_state = self._apg_mpc(self._dummy_x, init_rng, self.opt_state, self._dummy_xref)
-#         self._uopt.block_until_ready()
-    
-#     # # Profiler
-#     # with jax.profiler.trace("trace_mpc", create_perfetto_link=True):
-#     #     self.opt_state = self._reset_fn(self._dummy_x)
-#     #     self.opt_state.num_steps.block_until_ready()
+# # Profiler
+# with jax.profiler.trace("trace_mpc", create_perfetto_link=True):
+#     self.opt_state = self._reset_fn(self._dummy_x)
+#     self.opt_state.num_steps.block_until_ready()
 
 class SDEControlROS:
     """ A ROS node to control the quadcopter using my sde-based approach
@@ -275,7 +273,7 @@ class SDEControlROS:
 
         # Find the index of the control action to use
         _index = int((self.sample_time - tsample_mpc) / self._dt_usec)
-        if _index > _u_opt.shape[0]:
+        if _index >= _u_opt.shape[0]:
             # log ros error message
             rospy.logerr("The index of the control action is greater than the size of the control action array")
             # Pick the last control
@@ -376,6 +374,9 @@ class SDEControlROS:
             else:
                 raise ValueError("Unknown control state: {}".format(_control_state))
             _uopt.block_until_ready()
+            # Let simulate some delay in the computation
+            # time.sleep(0.01)
+
             _perf_time = time.time() - _perf_time
             
             # Do some processing before saving the control

@@ -16,4 +16,5 @@ plugin_whitelist:
 - vision_pose_estimate
 - onboard_computer_status
 - companion_process_status
+- debug_value
 #- 'sys_*'

@@ -3,7 +3,7 @@ import rospy
 import numpy as np
 
 # Import the messages we're interested in
-from mavros_msgs.msg import State, ParamValue
+from mavros_msgs.msg import State, ParamValue, DebugValue
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from mavros_msgs.srv import CommandBool, SetMode, ParamSet
@@ -31,6 +31,15 @@ SYS_STATUS = {
     6 : "Emergency",
     7 : "Poweroff",
     8 : "Flight Termination",
+}
+
+MPC_STATUS = {
+    -1 : "MPC OFF | NOT INITIALIZED",
+     0 : "MPC OFF | NOT INITIALIZED",
+     1 : "MPC ON | TEST",
+     2 : "MPC OFF -> MPC timeout [Motor msg] delay > 20ms",
+     3 : "MPC OFF -> FCU time >= MPC horizon -> MPC too slow",
+     4 : "MPC OFF -> FCU time < MPC -> Shouldn't happen"
 }
 
 # Create a logger class with info, debug, warn, error, and fatal methods
@@ -69,6 +78,7 @@ class BasicControl:
         self.wait_iter = int(wait_time * wait_freq)
         # Rate for waiting for the command
         self.rate = rospy.Rate(wait_freq) # Parameterize later
+        self.last_mpc_state = -1
 
         # Is there a command/service to send?
         self.command_to_send = False
@@ -121,7 +131,8 @@ class BasicControl:
         ######### Create subscribers for state, odometry, imu, battery #########
         self.state_sub = rospy.Subscriber("/mavros/state", State, self.state_callback)
         self.odom_sub = rospy.Subscriber("/mavros/local_position/odom", Odometry, self.odom_callback)
-        self.battery_sub = rospy.Subscriber("/mavros/battery", BatteryState, self.battery_callback)
+        # self.battery_sub = rospy.Subscriber("/mavros/battery", BatteryState, self.battery_callback)
+        self.mpc_debug_sub = rospy.Subscriber("/mavros/debug_value/named_value_float", DebugValue, self.mpc_debug_callback)
         self.get_logger().warn("Subscribers are ready")
 
         ######### Create publisher for setpoint_position/local #########
@@ -425,6 +436,23 @@ class BasicControl:
             self.get_logger().warn("System status: " + SYS_STATUS[msg.system_status])
         self.state = msg
     
+    def mpc_debug_callback(self, msg):
+        """ Callback for mpc debug """
+        # First check if the key of the message match mpc_state
+        if msg.name != "mpc_state":
+            return
+        mpc_state = int(msg.value_float)
+        if mpc_state != self.last_mpc_state:
+            self.get_logger().warn("MPC state: " + MPC_STATUS[mpc_state])
+            # Check if we go from mpc_on to off
+            if self.last_mpc_state == 1 and mpc_state <= 0:
+                # Switch to position control
+                self.get_logger().warn("Switching to position control")
+                self.pos()
+
+        self.last_mpc_state = mpc_state
+
+
     def odom_callback(self, msg):
         """ Callback for odometry """
         self.odom = msg

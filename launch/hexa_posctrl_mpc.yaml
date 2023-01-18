@@ -76,7 +76,7 @@ apg_mpc:
   stepsize: 10.
 
   # The maximum number of gradient updates
-  max_iter: 1000
+  max_iter: 100
   max_no_improvement_iter: 50
 
   # The adaptive coefficient to scale the momentum. nill values mean
