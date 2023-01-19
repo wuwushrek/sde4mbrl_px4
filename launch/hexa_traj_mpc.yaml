@@ -88,8 +88,8 @@ num_particles: 1
 # long_step_dt: 0.01
 # discount: 1.0
 
-horizon: 20
-num_short_dt: 20
+horizon: 25
+num_short_dt: 25
 short_step_dt: 0.01
 # DANGEROUS: To use a time step different higher than the one used during training
 long_step_dt: 0.01

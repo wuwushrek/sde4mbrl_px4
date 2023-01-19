@@ -442,6 +442,7 @@ class BasicControl:
         if msg.name != "mpc_state":
             return
         mpc_state = int(msg.value_float)
+        
         if mpc_state != self.last_mpc_state:
             self.get_logger().warn("MPC state: " + MPC_STATUS[mpc_state])
             # Check if we go from mpc_on to off
