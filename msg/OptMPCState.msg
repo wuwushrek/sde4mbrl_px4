@@ -18,3 +18,5 @@ float32 callback_dt
 float32 state_dt
 
 string ctrl_state
+
+uint8 mpc_indx

@@ -541,6 +541,14 @@ class BasicControl:
             # Create the request
             req = FollowTrajRequest()
             req.state_controller = mode
+            # Modify the quaternion of the target to have 0 roll, 0 pitch, and the yaw of the current position
+            q = self.setpoint.pose.orientation
+            _, _, curr_yaw = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w])
+            q_target = tf.transformations.quaternion_from_euler(0, 0, curr_yaw)
+            self.setpoint.pose.orientation.x = q_target[0]
+            self.setpoint.pose.orientation.y = q_target[1]
+            self.setpoint.pose.orientation.z = q_target[2]
+            self.setpoint.pose.orientation.w = q_target[3]
             req.target_pose = self.setpoint
 
             # Call the service

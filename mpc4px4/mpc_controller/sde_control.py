@@ -4,7 +4,7 @@ import rospy
 import os
 
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
-import jax 
+import jax
 import jax.numpy as jnp
 
 import numpy as np
@@ -55,6 +55,7 @@ class SDEControlROS:
         self.control_state_dict = {'idle': 0, 'pos': 1, 'traj': 2, 'none' : -1}
         self.name_control_state_dict = {v : k for k, v in self.control_state_dict.items()}
         self.last_traj_time = 0.0
+        self.dt_state_callback = 0.0
         self.last_time_state_info = None
         self._target_x = self.dummy_state()
 
@@ -65,6 +66,7 @@ class SDEControlROS:
         self._test_mode = False
         self.mpc_on = MPCMotorsCMD.MPC_OFF
         self.reset_done = False
+        self._index = 0
 
         # Store the parameters of this node
         self.init_node_params()
@@ -95,7 +97,7 @@ class SDEControlROS:
         # Create a timer to publish on _opt_state_pub
         self._timer = rospy.Timer(rospy.Duration(self.mpc_report_dt), self.publish_opt_state)
 
-    
+
     def init_node_params(self):
         """ Initialize the node parameters from launch file param
         """
@@ -113,7 +115,7 @@ class SDEControlROS:
         rospy.loginfo("Setpoint controller directory: {}".format(self.sp_ctrl_dir))
         rospy.loginfo("MPC logging dt: {}".format(self.mpc_report_dt))
         rospy.loginfo("Mavlink address: {}".format(self.mav_addr))
-    
+
     def init_mavlink_connection(self):
         """ Initialize the mavlink connection and start the thread to listen to the messages
         """
@@ -129,7 +131,7 @@ class SDEControlROS:
             rospy.logwarn('First MPC State message received')
             # Log warn the message
             rospy.logwarn(_msg)
-        
+
         # Start the thread to listen to the messages
         self.mpc_state_thread = threading.Thread(target=self.handle_mpc_state_msg)
         self.mpc_state_thread.start()
@@ -140,13 +142,14 @@ class SDEControlROS:
             Save the setpoint that is going to be sent over ros.
             This function is called in a separate thread at startup.
         """
+        # TODO: Parametrize the timeout
         recv_time_out = 0.1
         # Loop to receive messages
         while not rospy.is_shutdown():
             # Get the state
             msg = self.mav.recv_match(blocking=True, timeout=recv_time_out)
             # If the message is not None, then call the callback
-            # The call back essentially notify the mpc solver then extract the next sequences of control inputs from 
+            # The call back essentially notify the mpc solver then extract the next sequences of control inputs from
             # the last solved mpc problem
             if msg is not None:
                 self.mpc_state_callback(msg)
@@ -162,42 +165,43 @@ class SDEControlROS:
         assert self.state_from_traj is not None, "The state_from_traj function should be not None, Have you provided a trajectory?"
 
         # Stire the dt time step
+        # TODO: rEMOVE THESE AS THEY ARE USELESS NOW
         self._dt_usec = self.traj_cfg_dict['_time_steps'][0] * 1e6 # in usec
         self.tn = float(self.traj_cfg_dict['cost_params']['uref'][0])
-        
+
         rospy.logwarn("################################################################")
         rospy.logwarn("Position controller provided --> MPC will be used as a position controller")
         pos_ctrl_path = self.config_dir + "/" + self.sp_ctrl_dir
         _state_from_pos, self.reset_pos_mpc, self.mpc_pos_solver, self.pos_uopt,\
                     self.default_pos_opt_state, self.pos_cfg_dict = self.load_single_mpc(pos_ctrl_path)
         assert _state_from_pos is None, "The state_from_pos function should be None, Have you provided a position controller?"
-    
-    
+
+
     def control_automata(self):
         """ Define the ways the control switch between trajectory and position controller
         """
-        # Check about 
+        # Check about
         # dt is the time step since the last call of this function
         if self._pos_control:
             self._target_x = np.array([self._target_sp.pose.position.x, self._target_sp.pose.position.y, self._target_sp.pose.position.z,
-                                      0., 0., 0., 
+                                      0., 0., 0.,
                                       self._target_sp.pose.orientation.w, self._target_sp.pose.orientation.x, self._target_sp.pose.orientation.y, self._target_sp.pose.orientation.z,
-                                      0., 0., 0.], 
+                                      0., 0., 0.],
                                     dtype=np.float32
                                 )
             return self.control_state_dict['pos']
-        
+
         if self._trajec_time < 0.0:
             # We are not running the trajectory
             return self.control_state_dict['none']
-        
+
         # If we get there it means current trajec_time >= 0 but the trajectory is not running
         if not self._run_trajectory: # If we are not running the trajectory
             # Get the initial state
             self._trajec_time = 0
             self._target_x = np.array(self.state_from_traj(self._trajec_time), dtype=np.float32)
             return self.control_state_dict['idle']
-        
+
         # We are running the trajectory
         _current_time = time.time()
         if self._trajec_time == 0: # If we are starting the trajectory
@@ -208,7 +212,7 @@ class SDEControlROS:
             # Save the time elapsed since the beginning of the trajectory
             self._trajec_time = (_current_time - self.last_traj_time)
         return self.control_state_dict['traj']
-    
+
 
     def mpc_state_callback(self, msg):
         """ Callback for the full state of the quadcopter.
@@ -222,6 +226,7 @@ class SDEControlROS:
 
         # Get the current time
         _curr_time = time.time()
+
         # Time elapsed since the last call -> meaning last mpc state info
         self.dt_state_info = _curr_time - self.last_time_state_info if self.last_time_state_info is not None else 0.0
         # Update the last time received state info
@@ -229,7 +234,7 @@ class SDEControlROS:
 
         # Transform the state into numpy array
         curr_state = np.array([msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz, msg.qw, msg.qx, msg.qy, msg.qz, msg.wx, msg.wy, msg.wz], dtype=np.float32)
-        
+
         # Get the time the sample was taken
         self.sample_time = msg.time_usec
 
@@ -255,21 +260,27 @@ class SDEControlROS:
         # Send a signal to wake up the mpc process
         self._mpc_event.set()
 
+        # # Wait for the mpc response
+        # self.sync_event.wait()
+        # self.sync_event.clear()
+
         # Proceed to Check from the shared memory the optimal control action and current time
         # Extract the frist index to start
         with self._u_opt_lock:
             # Extract the latest computed control
             _u_opt = np.array(self.u_opt_shr)
+            # Extract the lates angular rate desired values
+            _w_opt = np.array(self.w_opt_shr)
             # Extract the optimization info
             self._optimizer_info = np.array(self.opt_info_shr)
-        
+
         # Now proceed to parse and publish the control action
         tsample_mpc = self._optimizer_info[self.key2index_info_mpc['sample_time_posmpc']]
         if tsample_mpc <= 0:
             self.dt_state_callback = time.time() - _curr_time
             # Ros log warn
             rospy.logwarn("The sample time for the mpc is not valid -> No MPC solution computed yet")
-            return 
+            return
 
         # Find the index of the control action to use
         _index = int((self.sample_time - tsample_mpc) / self._dt_usec)
@@ -279,10 +290,19 @@ class SDEControlROS:
             # Pick the last control
             _index = _u_opt.shape[0] - 1
 
-        self._uopt = _u_opt[_index:(_index + MPCMotorsCMD.HORIZON_MPC)]
-        if self._uopt.shape[0] < MPCMotorsCMD.HORIZON_MPC:
-            # We duplicate the last control action and append it to match the horizon
-            self._uopt = np.concatenate((self._uopt, np.tile(self._uopt[-1], (MPCMotorsCMD.HORIZON_MPC - self._uopt.shape[0], 1))), axis=0)
+        # self._uopt = _u_opt[_index:(_index + MPCMotorsCMD.HORIZON_MPC)]
+        self._uopt = _u_opt[_index, :]
+        # Complete _uopt with zeros values if its dimension is only 4
+        if self._uopt.shape[0] < 6:
+            self._uopt = np.concatenate((self._uopt, np.zeros((6 - self._uopt.shape[0],))))
+        # Obtain the angular rate desired
+        self._wopt = _w_opt[_index, :]
+        # Store the index for printing
+        self._index = _index
+
+        # if self._uopt.shape[0] < MPCMotorsCMD.HORIZON_MPC:
+        #     # We duplicate the last control action and append it to match the horizon
+        #     self._uopt = np.concatenate((self._uopt, np.tile(self._uopt[-1], (MPCMotorsCMD.HORIZON_MPC - self._uopt.shape[0], 1))), axis=0)
 
         # Check if there is a need to publish the control action
         if self._control_state == self.control_state_dict['none']:
@@ -306,7 +326,7 @@ class SDEControlROS:
         # Set the process name
         setproctitle.setproctitle("mpc_process")
 
-        # Rospy warn 
+        # Rospy warn
         rospy.logwarn("Starting and Setting up the MPC process")
 
         # Initialize random key generator
@@ -339,8 +359,9 @@ class SDEControlROS:
         while True:
             # Wait for the event to be set with a timeout
             if wait_event:
-                self._mpc_event.wait(0.1)
-            
+                self._mpc_event.wait()
+                self._mpc_event.clear()
+
             # Extract the useful information from the shared memory
             with self._curr_state_lock:
                 # Store the current state
@@ -354,34 +375,41 @@ class SDEControlROS:
                 if _control_state != self.control_state_dict['traj']:
                     # Store the target setpoint
                     _target_x = np.array(self.target_setpoint_shr)
-            
+
             # Check if the control state is set to None
             _perf_time = time.time()
-            if _curr_ctrl is None:
+            if _curr_ctrl is None or (_curr_ctrl == 'none' and _control_state != self.control_state_dict['none']):
                 # Reset both controllers
                 opt_state_traj = self.reset_traj_mpc(x=curr_state, rng=rng_traj, xdes=curr_state)
                 opt_state_pos = self.reset_pos_mpc(x=curr_state, rng=rng_pos, xdes=curr_state)
 
             if _control_state == self.control_state_dict['none']:
-                _curr_ctrl = 'pos'
-                _uopt, opt_state_pos, rng_pos, _ = self.mpc_pos_solver(curr_state, rng_pos, opt_state_pos, curr_t=0.0, xdes=enu2ned(curr_state, np))
+                _curr_ctrl = 'none'
+                _uopt, opt_state_pos, rng_pos, _pos_evol = self.mpc_pos_solver(curr_state, rng_pos, opt_state_pos, curr_t=0.0, xdes=enu2ned(curr_state, np))
             elif _control_state == self.control_state_dict['traj']:
                 _curr_ctrl = 'traj'
-                _uopt, opt_state_traj, rng_traj, _ = self.mpc_traj_solver(curr_state, rng_traj, opt_state_traj, curr_t=_trajec_time, xdes=curr_state)
+                _uopt, opt_state_traj, rng_traj, _pos_evol = self.mpc_traj_solver(curr_state, rng_traj, opt_state_traj, curr_t=_trajec_time, xdes=curr_state)
             elif _control_state == self.control_state_dict['pos']:
                 _curr_ctrl = 'pos'
-                _uopt, opt_state_pos, rng_pos, _ = self.mpc_pos_solver(curr_state, rng_pos, opt_state_pos, curr_t=0.0, xdes=_target_x)
+                _uopt, opt_state_pos, rng_pos, _pos_evol = self.mpc_pos_solver(curr_state, rng_pos, opt_state_pos, curr_t=0.0, xdes=_target_x)
             else:
                 raise ValueError("Unknown control state: {}".format(_control_state))
             _uopt.block_until_ready()
-            # Let simulate some delay in the computation
-            # time.sleep(0.01)
+            # # Let simulate some delay in the computation
+            # time.sleep(0.1)
 
             _perf_time = time.time() - _perf_time
-            
+
             # Do some processing before saving the control
             _uopt = np.array(_uopt)
-            _opt_state = opt_state_pos if _curr_ctrl == 'pos' else opt_state_traj
+            # TODO: Something more elegant here based on the Mier inside P4
+            # Compute the thrust value -> This function assumes that all motors are operational and identical
+            thrust_evol = np.sum(_uopt, axis=1) / _uopt.shape[1]
+            _wopt = np.array([thrust_evol, _pos_evol[1:,10], _pos_evol[1:,11], _pos_evol[1:,12] ] ).T
+            # _pos_evol = np.array(_pos_evol)
+            # _uopt = np.array([_uopt[:,0], _pos_evol[1:,10], _pos_evol[1:,11], _pos_evol[1:,12] ] ).T
+
+            _opt_state = opt_state_pos if (_curr_ctrl == 'pos' or _curr_ctrl == 'none')  else opt_state_traj
 
             # if time.time() - _ctime > 2.0:
             #     rospy.logwarn("MPC process: {} control, solve time: {:.3f} ms".format(_curr_ctrl, _perf_time*1000.0))
@@ -390,6 +418,8 @@ class SDEControlROS:
             with self._u_opt_lock:
                 # Store the control
                 self.u_opt_shr[:] = _uopt
+                # Store the angular rate evolution
+                self.w_opt_shr[:] = _wopt
                 self.opt_info_shr[self.key2index_info_mpc['sample_time_posmpc']] = sample_time
                 self.opt_info_shr[self.key2index_info_mpc['solveTime']] = _perf_time
                 self.opt_info_shr[self.key2index_info_mpc['avg_linesearch']] = float (_opt_state.avg_linesearch)
@@ -399,12 +429,14 @@ class SDEControlROS:
                 self.opt_info_shr[self.key2index_info_mpc['avg_stepsize']] = float (_opt_state.avg_stepsize)
                 self.opt_info_shr[self.key2index_info_mpc['cost0']] = float (_opt_state.init_cost)
                 self.opt_info_shr[self.key2index_info_mpc['costT']] = float (_opt_state.opt_cost)
-    
+
+            # self.sync_event.set()
+
 
     def initialize_mpc_callback(self, req):
         """ Service callback to set the trajectory """
         res = LoadTrajAndParamsResponse()
-        
+
         if self._run_trajectory or self._pos_control:
             # warn the user of the problem
             rospy.logwarn("Cannot set the trajectory because the controller is running")
@@ -424,12 +456,12 @@ class SDEControlROS:
         self.reset_done = True
         res.success = True
         return res
-    
+
 
     def start_trajectory_callback(self, req):
         """ Service callback to start the trajectory """
         res = FollowTrajResponse()
-        # If the controller is not reset yet, we cannot 
+        # If the controller is not reset yet, we cannot
         if not self.reset_done and req.state_controller != FollowTrajRequest.CTRL_INACTIVE:
             rospy.logwarn("Cannot start the trajectory because the controller is not reset: Do controller_init before!")
             res.success = False
@@ -480,29 +512,29 @@ class SDEControlROS:
             rospy.logwarn("Controller deactivated")
             res.success = True
             return res
-        
+
         # Check if rtrajectory is already running
         if self._run_trajectory and mode == FollowTrajRequest.CTRL_TRAJ_ACTIVE:
             rospy.logerr("The trajectory is already running")
             res.success = False
             return res
-        
+
         self._pos_control = False
         self._test_mode = False
         self._run_trajectory = mode == FollowTrajRequest.CTRL_TRAJ_ACTIVE
         self._trajec_time = 0.0 if (mode == FollowTrajRequest.CTRL_TRAJ_IDLE or mode == FollowTrajRequest.CTRL_TRAJ_ACTIVE) else -1.0
         self.mpc_on = MPCMotorsCMD.MPC_ON
-        
+
         # ros warn the user
         rospy.logwarn("run_trajectory_ = {}, trajec_time_ = {}".format(self._run_trajectory, self._trajec_time))
         res.success = True
         return res
-        
+
     def publish_opt_state(self, _):
         """ The callback to publish the state of the MPC
         """
         # We extract information from self._optimizer_info
-        # Build the message 
+        # Build the message
         msg = OptMPCState()
         msg.stamp = rospy.Time.now()
         msg.avg_linesearch = self._optimizer_info[self.key2index_info_mpc['avg_linesearch']]
@@ -516,10 +548,11 @@ class SDEControlROS:
         msg.callback_dt = self.dt_state_callback
         msg.state_dt = self.dt_state_info
         msg.ctrl_state = self.name_control_state_dict[self._control_state]
+        msg.mpc_indx = self._index
 
         # Publish the message
         self._opt_state_pub.publish(msg)
-    
+
     # def pub_reference_pose(self, tpub):
     #     """ Publish the reference pose """
     #     # Construct the pose message
@@ -541,20 +574,16 @@ class SDEControlROS:
     def pub_cmd_setpoint(self, curr_time, sample_time):
         """ Publish the command setpoint """
         self.mav.mav.mpc_motors_cmd_send(
-            time_usec = int(curr_time.to_nsec() / 1000), 
-            time_init = sample_time, 
-            dt = self._dt_usec, 
-            tb = self._uopt[:MPCMotorsCMD.HORIZON_MPC,0], 
-            mx = self._uopt[:MPCMotorsCMD.HORIZON_MPC,1], 
-            my = self._uopt[:MPCMotorsCMD.HORIZON_MPC,2], 
-            mz = self._uopt[:MPCMotorsCMD.HORIZON_MPC,3], 
-            tn = self.tn, 
-            mpc_on = self.mpc_on
+            time_usec = int(curr_time.to_nsec() / 1000),
+            motor_val_des = self._uopt,
+            thrust_and_angrate_des = self._wopt,
+            mpc_on = self.mpc_on,
+            weight_motors = 0
         )
-    
+
 
     def multi_process_shared_variables(self):
-        """ Define and store the variables tht are going to be saved between this process and 
+        """ Define and store the variables tht are going to be saved between this process and
             the mpc process
         """
         state = self.dummy_state()
@@ -569,6 +598,12 @@ class SDEControlROS:
         self._u_opt_shr = shared_memory.SharedMemory(create=True, size=size_u)
         self.u_opt_shr = np.ndarray(u_zero.shape, dtype=u_zero.dtype, buffer=self._u_opt_shr.buf)
 
+        # Create shared memory for the angular rate and thrust setpoint
+        # First input is the thrust and the last three are the angular rates
+        wopt_zero = np.zeros((u_zero.shape[0], 4))
+        self._w_opt_shr = shared_memory.SharedMemory(create=True, size=wopt_zero.nbytes)
+        self.w_opt_shr = np.ndarray(wopt_zero.shape, dtype=wopt_zero.dtype, buffer=self._w_opt_shr.buf)
+
         # Data needed for the mpc solver
         info_mpc_pre = np.array([0.0, 0.0, self.control_state_dict['none']])
         self.key2index_pre = {'sample_time_prempc': 0, 'duration': 1, 'ctrl_state': 2}
@@ -578,9 +613,9 @@ class SDEControlROS:
         # Data needed after the mpc solver -> information about solving the mpc
         # Create a shared array for storing optimization info from the mpc
         opt_state = self.default_traj_opt_state
-        info_mpc = np.array([-1.0, opt_state.avg_linesearch, opt_state.stepsize, opt_state.num_steps, opt_state.grad_sqr, 
+        info_mpc = np.array([-1.0, opt_state.avg_linesearch, opt_state.stepsize, opt_state.num_steps, opt_state.grad_sqr,
                                 opt_state.avg_stepsize, opt_state.init_cost, opt_state.opt_cost, 0.0], dtype=np.float32)
-        self.key2index_info_mpc = {'sample_time_posmpc': 0, 'avg_linesearch': 1, 'stepsize': 2, 
+        self.key2index_info_mpc = {'sample_time_posmpc': 0, 'avg_linesearch': 1, 'stepsize': 2,
                                     'num_steps': 3, 'grad_norm': 4, 'avg_stepsize': 5, 'cost0': 6, 'costT': 7, 'solveTime': 8}
         self._opt_info_shr = shared_memory.SharedMemory(create=True, size=info_mpc.nbytes)
         self.opt_info_shr = np.ndarray(info_mpc.shape, dtype=info_mpc.dtype, buffer=self._opt_info_shr.buf)
@@ -596,7 +631,8 @@ class SDEControlROS:
 
         # Create the event to notify the mpc process
         self._mpc_event = multiprocessing.Event()
-    
+        self.sync_event = multiprocessing.Event()
+
     def clean_shared_variables(self):
         """ Delete the shared variables
         """
@@ -604,13 +640,15 @@ class SDEControlROS:
         self._curr_state_shr.unlink()
         self._u_opt_shr.close()
         self._u_opt_shr.unlink()
+        self._w_opt_shr.close()
+        self._w_opt_shr.unlink()
         self._opt_info_shr.close()
         self._opt_info_shr.unlink()
         self._target_setpoint_shr.close()
         self._target_setpoint_shr.unlink()
         self._info_mpc_pre_shr.close()
         self._info_mpc_pre_shr.unlink()
-    
+
 
     def load_single_mpc(self, mpc_dir):
         """ Load a single MPC model from the given directory
@@ -653,14 +691,14 @@ class SDEControlROS:
         _traj_uopt = np.array(traj_uopt)
         rospy.logwarn("First evaluation of the mpc function took {} seconds".format(time.time() - start_time))
         return (_state_from_traj, _reset_traj_mpc, _mpc_traj_solver, _traj_uopt, _default_traj_opt_state, cfg_dict)
-    
+
     def start_mpc_process(self):
         """ Start the mpc process """
         # Create the process
         self.mpc_process = multiprocessing.Process(target=self.mpc_process_fn, name='mpc_process')
         # Start the process
         self.mpc_process.start()
-    
+
     def stop_mpc_process(self):
         """ Stop the mpc process """
         # Terminate the process
@@ -669,17 +707,17 @@ class SDEControlROS:
         self.mpc_process.join()
         # Clean the shared memory
         self.clean_shared_variables()
-    
+
     def stop_state_callback_thread(self):
         """ Close the mavlink connection
         """
         # self.mpc_state_thread.terminate()
         self.mpc_state_thread.join()
-    
+
     def dummy_state(self):
         """ Return a dummy state """
         return np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    
+
 
 if __name__ == '__main__':
     import os
@@ -695,7 +733,7 @@ if __name__ == '__main__':
 
     # Terminate and join the thread
     mpc_solver.stop_state_callback_thread()
-    
+
     # Stop the mpc process
     mpc_solver.stop_mpc_process()
 

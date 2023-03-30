@@ -13,8 +13,8 @@ Kp_z: 10.0
 Kv_x: 1.5
 Kv_y: 1.5
 Kv_z: 3.3
-ctrl_mode: 1 # {1 : ERROR_QUATERNION, 2 : ERROR_GEOMETRIC}
+ctrl_mode: 2 # {1 : ERROR_QUATERNION, 2 : ERROR_GEOMETRIC}
 feedthrough_enable: false # 
 
 # Trajectory directory to be used
-trajectory_path: ~/catkin_ws/src/mpc4px4/mpc4px4/trajectory_generation/my_trajs/test_traj_gen.csv
+trajectory_path: ~/catkin_ws/src/mpc4px4/mpc4px4/trajectory_generation/my_trajs/vcircle_traj_gen.csv
