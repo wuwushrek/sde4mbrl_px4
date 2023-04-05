@@ -19,7 +19,7 @@ def handle_user_input(node):
     # Get relevant node function
     node_functions = ['arm', 'disarm', 'takeoff', 'land', 'pos', 'relpos', 'offboard', 'controller_init', 
                         'controller_on', 'controller_off', 'controller_idle', 'controller_test',
-                        'set_box', 'rm_box', 'ctrl_pos']
+                        'set_box', 'rm_box', 'ctrl_pos', 'weight_motors']
                         
     completer = WordCompleter(node_functions, ignore_case=True)
     while True:
@@ -75,7 +75,7 @@ def handle_user_input(node):
             # Separate the arguments from the values
             args_ = []
             kwargs_ = {}
-            type_fn = str if function_name in ['controller_init'] else float
+            type_fn = str if function_name in ['controller_init'] else (int if function_name in ['weight_motors'] else float) 
             for arg in args:
                 if '=' in arg:
                     key, value = arg.split('=')

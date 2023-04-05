@@ -1,5 +1,7 @@
 # Directory to the learned model parameters
-learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/hexa_sitl/my_models/hexa_sitl_linear_nonoise_sde.pkl
+learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/hexa_sitl/my_models/hexa_sitl_sde.pkl
+# trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/test_traj_gen.csv
+
 
 input_constr:
   # pwm_1, pwm_2, pwm_3, pwm_4
@@ -9,44 +11,32 @@ input_constr:
 # Enforce the control inputs bound during learning value function
 enforce_ubound: True
 
-
-# Cost for tracking trajectory
-# cost_params:
-#   uref: [0.42, 0.42, 0.42, 0.42, 0.42, 0.42]
-#   uerr: 0.01 # m1, m2, m3, m4 1.0
-#   perr: [5., 5., 15.] # x, y, z, vx, vy, vz
-#   verr: [0.1, 0.1, 0.1]
-#   qerr: [0.1, 0.1, 5] # qx, qy, qz
-#   werr: [0.1, 0.1, 0.5] # wx, wy, wz
-#   # res_sig: [0, 0.1]
-#   res_mult: 1.0
-
-# Cost for tracking position setpoint
-state_constr:
-  # It represents the indexes of the constrained state variables
-  state_id: [3, 4, 5, 10, 11, 12]
-  # Penalty term for the slack variables
-  state_penalty: [10.0, 10.0, 20.0, 1.0, 1.0, 1.0] # 0.1
-  # slack scaling and constraints
-  # Set of min max values for the slack id above
-  slack_scaling: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
-  state_bound: [[-0.5, 0.5], [-0.5, 0.5], [-0.4, 0.4], [-0.8, 0.8], [-0.8, 0.8], [-0.7, 0.7]] #.inf, -.inf
-  # Enforce bound constraints via proximal ?
-  # Doing so augment the number of variables of the problem by the number of
-  # slack constraints
-  slack_proximal: True
-  constr_pen: 0.1
+# # Cost for tracking position setpoint
+# state_constr:
+#   # It represents the indexes of the constrained state variables
+#   state_id: [3, 4, 5, 10, 11, 12]
+#   # Penalty term for the slack variables
+#   state_penalty: [10.0, 10.0, 20.0, 1.0, 1.0, 1.0] # 0.1
+#   # slack scaling and constraints
+#   # Set of min max values for the slack id above
+#   slack_scaling: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
+#   state_bound: [[-0.5, 0.5], [-0.5, 0.5], [-0.4, 0.4], [-0.8, 0.8], [-0.8, 0.8], [-0.7, 0.7]] #.inf, -.inf
+#   # Enforce bound constraints via proximal ?
+#   # Doing so augment the number of variables of the problem by the number of
+#   # slack constraints
+#   slack_proximal: True
+#   constr_pen: 0.1
 
 cost_params:
   uref: [0.42, 0.42, 0.42, 0.42, 0.42, 0.42]
-  uerr: 0.1 # m1, m2, m3, m4 1.0
-  perr: [10., 10., 30.] # x, y, z
-  verr: [2.0, 2.0, 2.0] # vx, vy, vz
-  qerr: [0.1, 0.1, 10] # qx, qy, qz
-  werr: [0.1, 0.1, 0.1] # wx, wy, wz
+  uerr: 0.01 # m1, m2, m3, m4 1.0
+  perr: [20., 20., 50.] # x, y, z
+  verr: [5.0, 5.0, 5.0] # vx, vy, vz
+  qerr: [0.1, 0.1, 20] # qx, qy, qz
+  werr: [3.0, 3.0, 3.0] # wx, wy, wz
   # res_sig: [0, 0.1]
   res_mult: 0.1
-  u_slew_coeff: 1.0
+  u_slew_coeff: 0.1
 
 horizon: 20
 num_short_dt: 20

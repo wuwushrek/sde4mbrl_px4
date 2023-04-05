@@ -7,5 +7,6 @@ uint8 CTRL_TEST = 4
 
 int16 state_controller
 geometry_msgs/PoseStamped target_pose
+uint8 weight_motors
 ---
 bool success

@@ -439,7 +439,7 @@ class BasicControl:
     def mpc_debug_callback(self, msg):
         """ Callback for mpc debug """
         # First check if the key of the message match mpc_state
-        if msg.name != "mpc_state":
+        if msg.name != "mpc":
             return
         mpc_state = int(msg.value_float)
         
@@ -524,7 +524,7 @@ class BasicControl:
         except rospy.ServiceException as e:
             self.get_logger().error("Failed to call set_trajectory_and_params: " + str(e))
     
-    def controller_set_mode(self, mode):
+    def controller_set_mode(self, mode, wmotors=110):
         """
             Set the controller mode
             mode: The mode to set
@@ -541,6 +541,8 @@ class BasicControl:
             # Create the request
             req = FollowTrajRequest()
             req.state_controller = mode
+            req.weight_motors = wmotors
+
             # Modify the quaternion of the target to have 0 roll, 0 pitch, and the yaw of the current position
             q = self.setpoint.pose.orientation
             _, _, curr_yaw = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w])
@@ -553,10 +555,15 @@ class BasicControl:
 
             # Call the service
             res = self.start_traj_controller_client(req)
+
             if not res.success:
                 self.get_logger().warn("Failed to set controller mode to " + str(mode))
                 return
-
+            
+            if wmotors >=0 and wmotors <= 100:
+                self.get_logger().warn("Setting MPC weight motors to: " + str(wmotors))
+                return
+            
             if mode != req.CTRL_INACTIVE and mode != req.CTRL_TEST:
                 self.get_logger().warn("Controller mode set to: " + 'CTRL_TRAJ_ACTIVE' if mode == req.CTRL_TRAJ_ACTIVE else 'CTRL_POSE_ACTIVE' if mode == req.CTRL_POSE_ACTIVE else "CTRL_TRAJ_IDLE")
                 self.ctrl_on = True
@@ -600,6 +607,16 @@ class BasicControl:
         """
         self.controller_set_mode(FollowTrajRequest.CTRL_TRAJ_IDLE)
         self.stop_offboard_mode = True
+    
+    def weight_motors(self, wmotors):
+        """
+            Set the weight of the motors
+        """
+        # Check if the input is between 0 and 100 if not return
+        if wmotors < 0 or wmotors > 100:
+            self.get_logger().warn("Weight motors must be between 0 and 100")
+            return
+        self.controller_set_mode(FollowTrajRequest.CTRL_TEST, wmotors)
     
     def ctrl_cmd_posestamped(self):
         """
