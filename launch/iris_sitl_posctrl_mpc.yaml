@@ -68,10 +68,11 @@ apg_mpc:
   rtol: 1.0e-6
 
   linesearch:
+    init_stepsize: 0.01
     max_stepsize: 0.1 # The maximum admissible step size
     coef: 0.1 # The agressiveness coefficient. The smaller the larger step size in the optimization
     decrease_factor: 0.7 # The decrease factor when performing the armijo linesearch
-    increase_factor: 1.5 # The increase factor at each new gradient descent iteration
+    increase_factor: 1.3 # The increase factor at each new gradient descent iteration
     # # The reset strategy at each iteration
     # # "conservative": re-use previous stepsize, producing a non increasing sequence of stepsizes. Slow convergence.
     # # "increase": attempt to re-use previous stepsize multiplied by increase_factor. Cheap and efficient heuristic.

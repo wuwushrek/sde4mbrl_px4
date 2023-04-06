@@ -197,7 +197,7 @@ class SDEControlROS:
         if not self._run_trajectory: # If we are not running the trajectory
             # Get the initial state
             self._trajec_time = 0
-            self._target_x = np.array(self.state_from_traj(self._trajec_time), dtype=np.float32)
+            self._target_x = np.array(self.state_from_traj(0.0), dtype=np.float32)
             self._dt_usec = self._dt_usec_pos
             return self.control_state_dict['idle']
 
@@ -255,7 +255,7 @@ class SDEControlROS:
             # Store the current control state
             self.info_mpc_pre_shr[self.key2index_pre['ctrl_state']] = self._control_state
             # Store the duration used in trajectory optimization
-            self.info_mpc_pre_shr[self.key2index_pre['duration']] = self._trajec_time
+            self.info_mpc_pre_shr[self.key2index_pre['duration']] = float(self._trajec_time)
             if self._control_state != self.control_state_dict['traj']:
                 # Store the target setpoint
                 self.target_setpoint_shr[:] = self._target_x
