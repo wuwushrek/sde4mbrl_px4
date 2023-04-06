@@ -30,11 +30,11 @@ cost_params:
   uref: [0.71, 0.71, 0.71, 0.71]
   uerr: 0.001 # m1, m2, m3, m4 1.0
   perr: [100., 100., 200.] # x, y, z
-  verr: [5.0, 5.0, 5.0] # vx, vy, vz
+  verr: [5.0, 5.0, 10.0] # vx, vy, vz
   qerr: [1, 1, 100] # qx, qy, qz
-  werr: [3.0, 3.0, 3.0] # wx, wy, wz
+  werr: [1.0, 1.0, 1.0] # wx, wy, wz
   # res_sig: [0, 0.1]
-  res_mult: 0.1
+  res_mult: 0.01
   # u_slew_coeff: 0.01
 
 # cost_params:

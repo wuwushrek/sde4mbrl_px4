@@ -24,15 +24,16 @@ enforce_ubound: True
 #   slack_proximal: False
 #   constr_pen: 0.1
 
+# Setpoint cost
 cost_params:
   uref: [0.71, 0.71, 0.71, 0.71]
   uerr: 0.01 # m1, m2, m3, m4 1.0
-  perr: [20., 20., 50.] # x, y, z
-  verr: [5.0, 5.0, 5.0] # vx, vy, vz
+  perr: [20., 20., 40.] # x, y, z
+  verr: [3.0, 3.0, 3.0] # vx, vy, vz
   qerr: [0.1, 0.1, 20] # qx, qy, qz
   werr: [3.0, 3.0, 3.0] # wx, wy, wz
   # res_sig: [0, 0.1]
-  res_mult: 0.1
+  res_mult: 0.01
   u_slew_coeff: 0.1
 
 horizon: 20
@@ -77,4 +78,4 @@ apg_mpc:
     # # "conservative": re-use previous stepsize, producing a non increasing sequence of stepsizes. Slow convergence.
     # # "increase": attempt to re-use previous stepsize multiplied by increase_factor. Cheap and efficient heuristic.
     reset_option: increase # or conservative
-    maxls: 10 # Maximum number of iterations during the line search
+    maxls: 4 # Maximum number of iterations during the line search

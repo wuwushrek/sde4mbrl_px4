@@ -115,6 +115,7 @@ class SDEControlROS:
         """
         rospy.logwarn('Initializing the mavlink connection')
         self.mav = mavutil.mavlink_connection('udpin:'+self.mav_addr)
+        self.mav.wait_heartbeat()
         rospy.logwarn('Waiting for the first MPC message')
         _msg = self.mav.recv_match(blocking=True, timeout=1.0)
         if _msg is None:
@@ -141,7 +142,11 @@ class SDEControlROS:
         # Loop to receive messages
         while not rospy.is_shutdown():
             # Get the state
-            msg = self.mav.recv_match(blocking=True, timeout=recv_time_out)
+            msg = self.mav.recv_match(type='MPC_FULL_STATE', blocking=True, timeout=recv_time_out)
+            # # # Check if the message is a MPC_STATE message
+            # if msg is not None and msg.get_type() != 'MPC_FULL_STATE':
+            #     rospy.logwarn('Received a message of type: {}'.format(msg.get_type()))
+            #     msg = None
             # If the message is not None, then call the callback
             # The call back essentially notify the mpc solver then extract the next sequence of control inputs from
             # the last solved mpc problem. Then, send the control inputs to the drone
