@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>mpc4px4</name>
+  <name>sde4mbrl_px4</name>
   <version>0.0.1</version>
   <description>A ROS package for PX4 control using Neural SDE-Based Model Predictive Control</description>
   <maintainer email="frmbouwe@gmail.com">Franck Djeumou</maintainer>

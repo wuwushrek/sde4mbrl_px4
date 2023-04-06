@@ -91,7 +91,7 @@ geometricCtrl::~geometricCtrl() {
   // Destructor
 }
 
-bool geometricCtrl::setTrajectoryAndParams(mpc4px4::LoadTrajAndParams::Request &req, mpc4px4::LoadTrajAndParams::Response &res)
+bool geometricCtrl::setTrajectoryAndParams(sde4mbrl_px4::LoadTrajAndParams::Request &req, sde4mbrl_px4::LoadTrajAndParams::Response &res)
 {
     if (!req.controller_param_yaml.empty())
     {
@@ -110,7 +110,7 @@ bool geometricCtrl::setTrajectoryAndParams(mpc4px4::LoadTrajAndParams::Request &
     return true;
 }
 
-bool geometricCtrl::triggerTrajectory(mpc4px4::FollowTraj::Request &req, mpc4px4::FollowTraj::Response &res)
+bool geometricCtrl::triggerTrajectory(sde4mbrl_px4::FollowTraj::Request &req, sde4mbrl_px4::FollowTraj::Response &res)
 {
     // Set the target setpoint if given by the user
     target_sp_ = req.target_pose;
@@ -657,12 +657,12 @@ bool geometricCtrl::loadParameters(const std::string &_filename)
 
 void geometricCtrl::startTrajectory(int start)
 {
-    if (start == mpc4px4::FollowTraj::Request::CTRL_TEST){
+    if (start == sde4mbrl_px4::FollowTraj::Request::CTRL_TEST){
         return;
     }
 
     // Let's check if position control is requested
-    if (start == mpc4px4::FollowTraj::Request::CTRL_POSE_ACTIVE){
+    if (start == sde4mbrl_px4::FollowTraj::Request::CTRL_POSE_ACTIVE){
         run_trajectory_ = false;
         trajec_time_ = -1.0;
         current_stage_ = 0;
@@ -672,7 +672,7 @@ void geometricCtrl::startTrajectory(int start)
         return ;
     }
     
-    if (start == mpc4px4::FollowTraj::Request::CTRL_INACTIVE){
+    if (start == sde4mbrl_px4::FollowTraj::Request::CTRL_INACTIVE){
         run_trajectory_ = false;
         trajec_time_ = -1.0;
         current_stage_ = 0;
@@ -693,8 +693,8 @@ void geometricCtrl::startTrajectory(int start)
     }
 
     pose_ctrl_ = false;
-    run_trajectory_ = start == mpc4px4::FollowTraj::Request::CTRL_TRAJ_ACTIVE;
-    trajec_time_ = (start == mpc4px4::FollowTraj::Request::CTRL_TRAJ_IDLE || start == mpc4px4::FollowTraj::Request::CTRL_TRAJ_ACTIVE) ? 0.0 : -1.0;
+    run_trajectory_ = start == sde4mbrl_px4::FollowTraj::Request::CTRL_TRAJ_ACTIVE;
+    trajec_time_ = (start == sde4mbrl_px4::FollowTraj::Request::CTRL_TRAJ_IDLE || start == sde4mbrl_px4::FollowTraj::Request::CTRL_TRAJ_ACTIVE) ? 0.0 : -1.0;
     current_stage_ = 0;
     // Warn print run_trajectory_, trajec_time_, current_stage_
     ROS_WARN("run_trajectory_ = %d, trajec_time_ = %f, current_stage_ = %d", run_trajectory_, trajec_time_, current_stage_);

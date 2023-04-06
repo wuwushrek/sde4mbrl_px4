@@ -17,4 +17,4 @@ ctrl_mode: 2 # {1 : ERROR_QUATERNION, 2 : ERROR_GEOMETRIC}
 feedthrough_enable: false # 
 
 # Trajectory directory to be used
-trajectory_path: ~/catkin_ws/src/mpc4px4/mpc4px4/trajectory_generation/my_trajs/vcircle_traj_gen.csv
+trajectory_path: ~/catkin_ws/src/sde4mbrl_px4/sde4mbrl_px4/trajectory_generation/my_trajs/vcircle_traj_gen.csv

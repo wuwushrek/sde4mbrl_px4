@@ -10,8 +10,8 @@ from nav_msgs.msg import Odometry
 from mavros_msgs.srv import CommandBool, SetMode, ParamSet
 from sensor_msgs.msg import BatteryState
 
-from mpc4px4.srv import LoadTrajAndParams, LoadTrajAndParamsRequest
-from mpc4px4.srv import FollowTraj, FollowTrajRequest
+from sde4mbrl_px4.srv import LoadTrajAndParams, LoadTrajAndParamsRequest
+from sde4mbrl_px4.srv import FollowTraj, FollowTrajRequest
 
 # Contain the command line interface
 from input_command import handle_user_input

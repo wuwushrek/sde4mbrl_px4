@@ -70,8 +70,8 @@
 // Import YAML
 #include <yaml-cpp/yaml.h>
 
-#include <mpc4px4/LoadTrajAndParams.h>
-#include <mpc4px4/FollowTraj.h>
+#include <sde4mbrl_px4/LoadTrajAndParams.h>
+#include <sde4mbrl_px4/FollowTraj.h>
 
 
 #define ERROR_QUATERNION  1
@@ -262,8 +262,8 @@ class geometricCtrl
         bool extractSetpointFromTrajectory(const double dt, Eigen::Vector3d &pos, Eigen::Vector3d &vel, Eigen::Vector3d &acc, double &targetYaw);
 
         // Functions foe the two services
-        bool setTrajectoryAndParams(mpc4px4::LoadTrajAndParams::Request &req, mpc4px4::LoadTrajAndParams::Response &res);
-        bool triggerTrajectory(mpc4px4::FollowTraj::Request &req, mpc4px4::FollowTraj::Response &res);
+        bool setTrajectoryAndParams(sde4mbrl_px4::LoadTrajAndParams::Request &req, sde4mbrl_px4::LoadTrajAndParams::Response &res);
+        bool triggerTrajectory(sde4mbrl_px4::FollowTraj::Request &req, sde4mbrl_px4::FollowTraj::Response &res);
 
     public:
         geometricCtrl(const ros::NodeHandle& nh);

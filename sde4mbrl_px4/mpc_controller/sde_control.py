@@ -12,9 +12,9 @@ import numpy as np
 from sde4mbrlExamples.rotor_uav.sde_mpc_design import load_mpc_from_cfgfile
 from sde4mbrlExamples.rotor_uav.utils import enu2ned
 
-from mpc4px4.srv import FollowTraj, FollowTrajRequest, FollowTrajResponse
-from mpc4px4.srv import LoadTrajAndParams, LoadTrajAndParamsResponse
-from mpc4px4.msg import OptMPCState
+from sde4mbrl_px4.srv import FollowTraj, FollowTrajRequest, FollowTrajResponse
+from sde4mbrl_px4.srv import LoadTrajAndParams, LoadTrajAndParamsResponse
+from sde4mbrl_px4.msg import OptMPCState
 
 
 from geometry_msgs.msg import PoseStamped

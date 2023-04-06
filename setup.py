@@ -2,8 +2,8 @@ from distutils.core import setup
 from catkin_pkg.python_setup import generate_distutils_setup
 
 d = generate_distutils_setup(
-    packages=['mpc4px4'],
-    package_dir={'mpc4px4': 'mpc4px4'},
+    packages=['sde4mbrl_px4'],
+    package_dir={'sde4mbrl_px4': 'sde4mbrl_px4'},
 )
 
 other_dict = dict(author='Franck Djeumou',

@@ -1,10 +1,10 @@
-# MPC4PX4
+# sde4mbrl_px4
 
-MPC4PX4 is a ROS package for PX4 control using Neural SDE-Based Model Predictive Control. This package enables learning-based control of PX4 using neural SDE to obtain uncertain-aware models of the quadrotor/hexacopter dynamics, and gradient-based model predictive control to perform low-level control.
+sde4mbrl_px4 is a ROS package for PX4 control using Neural SDE-Based Model Predictive Control. This package enables learning-based control of PX4 using neural SDE to obtain uncertain-aware models of the quadrotor/hexacopter dynamics, and gradient-based model predictive control to perform low-level control.
 
 ## Requirements
 
-MPC4PX4 requires ROS and the following packages at building times:
+sde4mbrl_px4 requires ROS and the following packages at building times:
 
 - [catkin_simple](https://github.com/catkin/catkin_simple)
 - [mavros](https://github.com/mavlink/mavros)
@@ -16,9 +16,9 @@ You can install these packages by cloning their respective repositories into you
 cd catkin_ws/src
 git clone https://github.com/catkin/catkin_simple.git
 git clone https://github.com/ethz-asl/eigen_catkin.git
-git clone https://github.com/wuwushrek/mpc4px4.git
+git clone https://github.com/wuwushrek/sde4mbrl_px4.git
 cd ..
-catkin build mpc4px4
+catkin build sde4mbrl_px4
 ```
 
 ## Usage

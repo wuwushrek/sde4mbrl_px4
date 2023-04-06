@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(mpc4px4)
+project(sde4mbrl_px4)
 
 
 find_package(catkin_simple REQUIRED)
@@ -23,7 +23,7 @@ include_directories(
 )
 
 cs_add_executable(geometric_controller
-  mpc4px4/geometric_controller/geometric_controller.cpp
+  sde4mbrl_px4/geometric_controller/geometric_controller.cpp
 )
 target_link_libraries(geometric_controller yaml-cpp)
 

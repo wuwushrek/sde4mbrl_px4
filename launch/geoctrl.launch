@@ -1,7 +1,7 @@
 <!-- Launch file for the geometric controller -->
 <launch>
-    <node pkg="mpc4px4" type="geometric_controller" name="geometric_controller" output="screen">
-        <param name="config_dir" value="~/catkin_ws/src/mpc4px4/launch/" />
+    <node pkg="sde4mbrl_px4" type="geometric_controller" name="geometric_controller" output="screen">
+        <param name="config_dir" value="~/catkin_ws/src/sde4mbrl_px4/launch/" />
         <param name="config_name" value="iris_geoctrl.yaml" />
     </node>
 </launch>
