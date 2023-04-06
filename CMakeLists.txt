@@ -22,10 +22,6 @@ include_directories(
   ${Eigen_INCLUDE_DIRS}
 )
 
-cs_add_executable(traj_gen_client
-  mpc4px4/trajectory_generation/traj_gen_client.cpp
-)
-
 cs_add_executable(geometric_controller
   mpc4px4/geometric_controller/geometric_controller.cpp
 )

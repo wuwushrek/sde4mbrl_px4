@@ -1,0 +1,255 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<root>
+ <tabbed_widget parent="main_window" name="Main Window">
+  <Tab tab_name="tab1" containers="1">
+   <Container>
+    <DockSplitter sizes="0.500355;0.499645" count="2" orientation="-">
+     <DockSplitter sizes="0.5;0.5" count="2" orientation="|">
+      <DockArea name="...">
+       <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+        <range bottom="-0.498439" top="0.431333" right="179.696166" left="0.196183"/>
+        <limitY/>
+        <curve color="#1f77b4" name="vehicle_rates_setpoint/pitch"/>
+        <curve color="#17becf" name="vehicle_angular_velocity/xyz.01"/>
+        <curve color="#f14cc1" name="mpc_motors_cmd/thrust_and_angrate_des.02">
+         <transform name="Scale/Offset" alias="mpc_motors_cmd/thrust_and_angrate_des.02[Scale/Offset]">
+          <options value_scale="-1.0" value_offset="0" time_offset="0"/>
+         </transform>
+        </curve>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+        <range bottom="-0.375641" top="0.476579" right="179.696166" left="0.196183"/>
+        <limitY/>
+        <curve color="#d62728" name="vehicle_rates_setpoint/roll"/>
+        <curve color="#9467bd" name="vehicle_angular_velocity/xyz.00"/>
+        <curve color="#74bd67" name="mpc_motors_cmd/thrust_and_angrate_des.01"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+     <DockSplitter sizes="0.502381;0.497619" count="2" orientation="|">
+      <DockArea name="...">
+       <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+        <range bottom="-2.673519" top="1.119355" right="179.696166" left="0.196183"/>
+        <limitY/>
+        <curve color="#1ac938" name="vehicle_rates_setpoint/yaw"/>
+        <curve color="#9467bd" name="vehicle_angular_velocity/xyz.02"/>
+        <curve color="#ff7f0e" name="mpc_motors_cmd/thrust_and_angrate_des.03">
+         <transform name="Scale/Offset" alias="mpc_motors_cmd/thrust_and_angrate_des.03[Scale/Offset]">
+          <options value_scale="-1.0" value_offset="0" time_offset="0"/>
+         </transform>
+        </curve>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+        <range bottom="-0.025000" top="1.025000" right="179.696166" left="0.196183"/>
+        <limitY/>
+        <curve color="#17becf" name="vehicle_control_mode/flag_control_rates_enabled"/>
+        <curve color="#bcbd22" name="vehicle_control_mode/flag_control_acceleration_enabled"/>
+        <curve color="#1f77b4" name="vehicle_control_mode/flag_control_position_enabled"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab tab_name="tab2" containers="1">
+   <Container>
+    <DockSplitter sizes="1" count="1" orientation="-">
+     <DockSplitter sizes="0.5;0.5" count="2" orientation="|">
+      <DockSplitter sizes="0.500355;0.499645" count="2" orientation="-">
+       <DockArea name="...">
+        <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+         <range bottom="-0.013904" top="0.612072" right="179.696166" left="0.196183"/>
+         <limitY/>
+         <curve color="#f14cc1" name="actuator_motors/control.00"/>
+         <curve color="#bcbd22" name="mpc_motors_cmd/motor_val_des.00"/>
+        </plot>
+       </DockArea>
+       <DockArea name="...">
+        <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+         <range bottom="-0.016707" top="0.684969" right="179.696166" left="0.196183"/>
+         <limitY/>
+         <curve color="#f14cc1" name="actuator_motors/control.02"/>
+         <curve color="#d62728" name="mpc_motors_cmd/motor_val_des.02"/>
+        </plot>
+       </DockArea>
+      </DockSplitter>
+      <DockSplitter sizes="0.500355;0.499645" count="2" orientation="-">
+       <DockArea name="...">
+        <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+         <range bottom="-0.016381" top="0.713622" right="179.696166" left="0.196183"/>
+         <limitY/>
+         <curve color="#f14cc1" name="actuator_motors/control.01"/>
+         <curve color="#1f77b4" name="mpc_motors_cmd/motor_val_des.01"/>
+        </plot>
+       </DockArea>
+       <DockArea name="...">
+        <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+         <range bottom="-0.013847" top="0.651745" right="179.696166" left="0.196183"/>
+         <limitY/>
+         <curve color="#f14cc1" name="actuator_motors/control.03"/>
+         <curve color="#1ac938" name="mpc_motors_cmd/motor_val_des.03"/>
+        </plot>
+       </DockArea>
+      </DockSplitter>
+     </DockSplitter>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab tab_name="tab2" containers="1">
+   <Container>
+    <DockSplitter sizes="1" count="1" orientation="-">
+     <DockArea name="...">
+      <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+       <range bottom="0.058633" top="0.684297" right="179.696166" left="0.196183"/>
+       <limitY/>
+       <curve color="#bcbd22" name="mpc_motors_cmd/motor_val_des.00"/>
+       <curve color="#1f77b4" name="mpc_motors_cmd/motor_val_des.01"/>
+       <curve color="#d62728" name="mpc_motors_cmd/motor_val_des.02"/>
+       <curve color="#1ac938" name="mpc_motors_cmd/motor_val_des.03"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab tab_name="tab2" containers="1">
+   <Container>
+    <DockSplitter sizes="0.500355;0.499645" count="2" orientation="-">
+     <DockArea name="...">
+      <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+       <range bottom="-0.171120" top="0.470798" right="179.696166" left="0.196183"/>
+       <limitY/>
+       <curve color="#1f77b4" name="mpc_full_state/vx"/>
+       <curve color="#d62728" name="mpc_full_state/vy"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+       <range bottom="-0.171120" top="0.470798" right="179.696166" left="0.196183"/>
+       <limitY/>
+       <curve color="#d62728" name="mpc_full_state/vy"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab tab_name="tab2" containers="1">
+   <Container>
+    <DockSplitter sizes="0.33357;0.332859;0.33357" count="3" orientation="-">
+     <DockArea name="...">
+      <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+       <range bottom="-0.002827" top="0.135360" right="179.696166" left="0.196183"/>
+       <limitY/>
+       <curve color="#1f77b4" name="mpc_full_state/x"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+       <range bottom="0.056209" top="0.666190" right="179.696166" left="0.196183"/>
+       <limitY/>
+       <curve color="#d62728" name="mpc_full_state/y"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+       <range bottom="-1.226064" top="-0.064388" right="179.696166" left="0.196183"/>
+       <limitY/>
+       <curve color="#1ac938" name="mpc_full_state/z"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab tab_name="tab3" containers="1">
+   <Container>
+    <DockSplitter sizes="0.500355;0.499645" count="2" orientation="-">
+     <DockSplitter sizes="0.5;0.5" count="2" orientation="|">
+      <DockArea name="...">
+       <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+        <range bottom="-0.025000" top="1.025000" right="179.696166" left="0.196183"/>
+        <limitY/>
+        <curve color="#ff7f0e" name="vehicle_control_mode/flag_control_altitude_enabled"/>
+        <curve color="#9467bd" name="vehicle_control_mode/flag_control_rates_enabled"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+        <range bottom="0.110778" top="0.646240" right="179.696166" left="0.196183"/>
+        <limitY/>
+        <curve color="#17becf" name="mpc_motors_cmd/thrust_and_angrate_des.00"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+     <DockSplitter sizes="0.5;0.5" count="2" orientation="|">
+      <DockArea name="...">
+       <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+        <range bottom="0.381317" top="0.775156" right="179.696166" left="0.196183"/>
+        <limitY/>
+        <curve color="#bcbd22" name="cpuload/load"/>
+        <curve color="#1f77b4" name="cpuload/ram_usage"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot flip_y="false" style="Lines" flip_x="false" mode="TimeSeries">
+        <range bottom="0.000000" top="1.000000" right="1.000000" left="0.000000"/>
+        <limitY/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <currentTabIndex index="5"/>
+ </tabbed_widget>
+ <use_relative_time_offset enabled="1"/>
+ <!-- - - - - - - - - - - - - - - -->
+ <!-- - - - - - - - - - - - - - - -->
+ <Plugins>
+  <plugin ID="DataLoad CSV">
+   <default time_axis="" delimiter="0"/>
+  </plugin>
+  <plugin ID="DataLoad MCAP"/>
+  <plugin ID="DataLoad ROS bags">
+   <use_header_stamp value="false"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="100"/>
+   <boolean_strings_to_number value="true"/>
+   <remove_suffix_from_strings value="true"/>
+  </plugin>
+  <plugin ID="DataLoad ULog"/>
+  <plugin ID="ROS Topic Subscriber">
+   <use_header_stamp value="false"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="100"/>
+   <boolean_strings_to_number value="true"/>
+   <remove_suffix_from_strings value="true"/>
+  </plugin>
+  <plugin ID="UDP Server"/>
+  <plugin ID="WebSocket Server"/>
+  <plugin ID="ZMQ Subscriber"/>
+  <plugin ID="Fast Fourier Transform"/>
+  <plugin ID="Quaternion to RPY"/>
+  <plugin ID="Reactive Script Editor">
+   <library code="--[[ Helper function to create a series from arrays&#xa;&#xa; new_series: a series previously created with ScatterXY.new(name)&#xa; prefix:     prefix of the timeseries, before the index of the array&#xa; suffix_X:   suffix to complete the name of the series containing the X value. If [nil], use the index of the array.&#xa; suffix_Y:   suffix to complete the name of the series containing the Y value&#xa; timestamp:   usually the tracker_time variable&#xa;              &#xa; Example:&#xa; &#xa; Assuming we have multiple series in the form:&#xa; &#xa;   /trajectory/node.{X}/position/x&#xa;   /trajectory/node.{X}/position/y&#xa;   &#xa; where {N} is the index of the array (integer). We can create a reactive series from the array with:&#xa; &#xa;   new_series = ScatterXY.new(&quot;my_trajectory&quot;) &#xa;   CreateSeriesFromArray( new_series, &quot;/trajectory/node&quot;, &quot;position/x&quot;, &quot;position/y&quot;, tracker_time );&#xa;--]]&#xa;&#xa;function CreateSeriesFromArray( new_series, prefix, suffix_X, suffix_Y, timestamp )&#xa;  &#xa;  --- clear previous values&#xa;  new_series:clear()&#xa;  &#xa;  --- Append points to new_series&#xa;  index = 0&#xa;  while(true) do&#xa;&#xa;    x = index;&#xa;    -- if not nil, get the X coordinate from a series&#xa;    if suffix_X ~= nil then &#xa;      series_x = TimeseriesView.find( string.format( &quot;%s.%d/%s&quot;, prefix, index, suffix_X) )&#xa;      if series_x == nil then break end&#xa;      x = series_x:atTime(timestamp)&#x9; &#xa;    end&#xa;    &#xa;    series_y = TimeseriesView.find( string.format( &quot;%s.%d/%s&quot;, prefix, index, suffix_Y) )&#xa;    if series_y == nil then break end &#xa;    y = series_y:atTime(timestamp)&#xa;    &#xa;    new_series:push_back(x,y)&#xa;    index = index+1&#xa;  end&#xa;end&#xa;&#xa;--[[ Similar to the built-in function GetSeriesNames(), but select only the names with a give prefix. --]]&#xa;&#xa;function GetSeriesNamesByPrefix(prefix)&#xa;  -- GetSeriesNames(9 is a built-in function&#xa;  all_names = GetSeriesNames()&#xa;  filtered_names = {}&#xa;  for i, name in ipairs(all_names)  do&#xa;    -- check the prefix&#xa;    if name:find(prefix, 1, #prefix) then&#xa;      table.insert(filtered_names, name);&#xa;    end&#xa;  end&#xa;  return filtered_names&#xa;end&#xa;&#xa;--[[ Modify an existing series, applying offsets to all their X and Y values&#xa;&#xa; series: an existing timeseries, obtained with TimeseriesView.find(name)&#xa; delta_x: offset to apply to each x value&#xa; delta_y: offset to apply to each y value &#xa;  &#xa;--]]&#xa;&#xa;function ApplyOffsetInPlace(series, delta_x, delta_y)&#xa;  -- use C++ indeces, not Lua indeces&#xa;  for index=0, series:size()-1 do&#xa;    x,y = series:at(index)&#xa;    series:set(index, x + delta_x, y + delta_y)&#xa;  end&#xa;end&#xa;"/>
+   <scripts/>
+  </plugin>
+  <plugin ID="CSV Exporter"/>
+  <plugin ID="ROS /rosout Visualization"/>
+  <plugin ID="ROS Topic Re-Publisher"/>
+ </Plugins>
+ <!-- - - - - - - - - - - - - - - -->
+ <previouslyLoaded_Datafiles>
+  <fileInfo prefix="" filename="../../../../Documents/log_flights/log_60_2023-3-29-21-14-42.ulg">
+   <selected_datasources value=""/>
+   <plugin ID="DataLoad ULog"/>
+  </fileInfo>
+ </previouslyLoaded_Datafiles>
+ <!-- - - - - - - - - - - - - - - -->
+ <customMathEquations/>
+ <snippets/>
+ <!-- - - - - - - - - - - - - - - -->
+</root>
+

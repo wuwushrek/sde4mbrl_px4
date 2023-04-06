@@ -8,7 +8,7 @@ d = generate_distutils_setup(
 
 other_dict = dict(author='Franck Djeumou',
     author_email = 'frmbouwe@gmail.com',
-    description = 'A ROS package for quadrotor control using SDE-Based Model Predictive Control',
+    description = 'A ROS package for PX4 control using Neural SDE-Based Model Predictive Control',
     license='GNU Public License'
 )
 

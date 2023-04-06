@@ -1,7 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import rospy
 import os
 
+# Set the platform to cpu for JAX
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import jax
 import jax.numpy as jnp

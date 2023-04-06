@@ -1,3 +1,4 @@
+# Message definition to set the parameters of the controller
 string controller_param_yaml
 ---
 bool success

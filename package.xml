@@ -2,7 +2,7 @@
 <package format="2">
   <name>mpc4px4</name>
   <version>0.0.1</version>
-  <description>A package for quadrotor modeling and control using learning-based Model Predictive Control</description>
+  <description>A ROS package for PX4 control using Neural SDE-Based Model Predictive Control</description>
   <maintainer email="frmbouwe@gmail.com">Franck Djeumou</maintainer>
   <license>GNU Public License</license>
 
@@ -11,12 +11,8 @@
 
   <build_depend>rospy</build_depend>
   <build_depend>roscpp</build_depend>
-  <build_depend>mav_trajectory_generation</build_depend>
-  <build_depend>mav_trajectory_generation_ros</build_depend>
-  <build_depend>mav_msgs</build_depend>
-  <build_depend>mav_planning_msgs</build_depend>
+  <build_depend>eigen_catkin</build_depend>
   <build_depend>message_generation</build_depend>
-  <build_depend>trajectory_msgs</build_depend>
   <build_depend>mavros_msgs</build_depend>
 
   <exec_depend>rospy</exec_depend>
@@ -24,10 +20,7 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <exec_depend>trajectory_msgs</exec_depend>
-  <exec_depend>message_runtime</exec_depend>
   <exec_depend>mavros_msgs</exec_depend>
-
 
    <!-- The export tag contains other, unspecified, tags -->
   <export>

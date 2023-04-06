@@ -1,12 +1,12 @@
-# <=0 not active, 1 means following traj, >1 means idle [Stuck at first trajectory point]
-uint8 CTRL_INACTIVE = 0
-uint8 CTRL_TRAJ_ACTIVE = 1
-uint8 CTRL_TRAJ_IDLE = 2
-uint8 CTRL_POSE_ACTIVE = 3
-uint8 CTRL_TEST = 4
+# Message definition to set the state of the controller
+uint8 CTRL_INACTIVE = 0 # The MPC controller is OFF
+uint8 CTRL_TRAJ_ACTIVE = 1 # The MPC controller is tracking a given trajectory
+uint8 CTRL_TRAJ_IDLE = 2 # The MPC controller is warming up before starting to track the trajectory
+uint8 CTRL_POSE_ACTIVE = 3 # The MPC controller is doing setpoint tracking instead of using the cascade PID loop
+uint8 CTRL_TEST = 4 # The MPC control inputs are computed and sent to the board but not used by the onboard controller
 
 int16 state_controller
-geometry_msgs/PoseStamped target_pose
-uint8 weight_motors
+geometry_msgs/PoseStamped target_pose # The desired target pose when CTRL_POSE_ACTIVE is active
+uint8 weight_motors # A scale between 0 and 100 to specify if the motors inputs come directly from mpc desired anguler rate (0) or mpc motor outputs (100)
 ---
 bool success

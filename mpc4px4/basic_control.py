@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import rospy
 import numpy as np
 
@@ -18,9 +19,7 @@ from input_command import handle_user_input
 import threading
 import tf
 
-# import os
-
-# TODO: Some system status -> Not sure if this is correct
+# TODO: Some system status -> Not sure if this is all
 SYS_STATUS = {
     0 : "Uninitialized",
     1 : "Booting",

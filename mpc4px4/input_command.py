@@ -1,3 +1,6 @@
+""" Command line interface for the basic controller
+"""
+
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
