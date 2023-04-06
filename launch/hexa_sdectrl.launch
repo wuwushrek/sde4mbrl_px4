@@ -1,7 +1,7 @@
 <!-- Launch file for the geometric controller on the hexacopter--> 
 <launch>
     <node pkg="sde4mbrl_px4" type="sde_control.py" name="sde_control" output="screen">
-        <param name="addr_mavlink_state_msg" value="192.168.1.127:14998" />
+        <param name="addr_mavlink_state_msg" value="192.168.1.207:14998" />
         <param name="config_dir" value="~/catkin_ws/src/sde4mbrl_px4/launch/" />
         <param name="traj_ctrl" value="hexa_traj_mpc.yaml" />
         <param name="sp_ctrl" value="hexa_posctrl_mpc.yaml" />
