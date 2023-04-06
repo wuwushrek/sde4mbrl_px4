@@ -21,6 +21,50 @@ cd ..
 catkin build sde4mbrl_px4
 ```
 
+## Setting up the PX4 SITL
+We need separate terminals for the PX4 SITL, mavros setup, the high-level basic controller, and the low-level MPC controller.
+
+1. Start the PX4 SITL in one terminal:
+```bash
+cd ~/Documents/PX4-Autopilot
+make px4_sitl gazebo # For iris
+# make px4_sitl gazebo_myhexa # For the hexacopter
+```
+
+2. Start the mavros setup, including mavlink-router to retarget the mavlink messages to the MPC controller, in another terminal:
+- Mavros helps us to communicate with the PX4 SITL via ROS. 
+- Mavlink-router is used to retarget some of the mavlink messages to the MPC controller. 
+- The mavlink-router is a tool that allows to route mavlink messages from one endpoint to another. 
+- In our case, we want to route the mavlink messages MPC_FULL_STATE from the PX4 SITL to the MPC controller, without going through ROS for avoiding latency. 
+- The PX4 SITL is running on the port 14540, and the MPC controller is running on the port 14998.
+- So, mavlink-router is going to listen to the port 14540 and forward some messages to the port 14998, and the full messages on 14999 where now mavros is listening to.
+- The router setting is given in the files `scripts/sitl_route_mavlink.sh` and `scripts/router_sitl.conf`.
+- Mavros launch file is given in the file `launch/px4_sitl.launch`, where the mavlink-router is started and the mavros node is started.
+
+```bash
+roslaunch sde4mbrl_px4 px4_sitl.launch
+```
+
+3. Start the high-level basic controller in another terminal:
+The high-level basic controller is used to send commands to the PX4 SITL, or initialize the MPC controller.
+The basic controller is given in the file `sde4mbrl_px4/basic_control.py`.
+```bash
+cd ~/catkin_ws/src/sde4mbrl_px4/sde4mbrl_px4
+python basic_control.py
+```
+
+4. Start the low-level MPC controller in another terminal:
+```bash
+roslaunch sde4mbrl_px4 iris_sdectrl.launch # For iris
+# roslaunch sde4mbrl_px4 hexa_sitl_sdectrl.launch # For the hexacopter
+```
+The controller settings are given in the file `sde4mbrl_px4/config/iris_sdectrl.yaml`.
+
+
+## Setting up in the AHG Lab
+
+
+
 ## Usage
 
 The package provides a basic_control.py script that allows you to control the quadrotor using a command-line interface.
