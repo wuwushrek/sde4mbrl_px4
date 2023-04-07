@@ -5,7 +5,7 @@ sde4mbrl_px4 is a ROS package for PX4 control using Neural SDE-Based Model Predi
 ## Requirements
 
 sde4mbrl_px4 requires ROS and the following packages at building times:
-
+- `libyaml-cpp-dev` via `sudo apt install libyaml-cpp-dev`
 - [catkin_simple](https://github.com/catkin/catkin_simple)
 - [Mavros with custom MPC mesages](https://github.com/wuwushrek/mavros), please follow the instructions in the mpc_franck branch.
 - [eigen_catkin](https://github.com/ethz-asl/eigen_catkin)
