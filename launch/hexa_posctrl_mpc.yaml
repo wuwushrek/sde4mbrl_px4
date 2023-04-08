@@ -1,6 +1,6 @@
 # Directory to the learned model parameters
 # learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/hexa_ahg/my_models/hexa_ahg_linear_nonoise_v3_sde.pkl
-learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/hexa_ahg/my_models/hexa_ahg_sde.pkl
+learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/hexa_ahg/my_models/hexa_ahg_v4_sde.pkl
 
 input_constr:
   # pwm_1, pwm_2, pwm_3, pwm_4
