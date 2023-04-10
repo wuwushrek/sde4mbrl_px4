@@ -1,7 +1,5 @@
 # Directory to the learned model parameters
 learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/hexa_sitl/my_models/hexa_sitl_sde.pkl
-# trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/test_traj_gen.csv
-
 
 input_constr:
   # pwm_1, pwm_2, pwm_3, pwm_4
@@ -30,12 +28,11 @@ enforce_ubound: True
 cost_params:
   uref: [0.42, 0.42, 0.42, 0.42, 0.42, 0.42]
   uerr: 0.01 # m1, m2, m3, m4 1.0
-  perr: [20., 20., 50.] # x, y, z
-  verr: [5.0, 5.0, 5.0] # vx, vy, vz
+  perr: [20., 20., 40.] # x, y, z
+  verr: [3.0, 3.0, 3.0] # vx, vy, vz
   qerr: [0.1, 0.1, 20] # qx, qy, qz
   werr: [3.0, 3.0, 3.0] # wx, wy, wz
-  # res_sig: [0, 0.1]
-  res_mult: 0.1
+  res_mult: 0.01
   u_slew_coeff: 0.1
 
 horizon: 20
@@ -71,7 +68,8 @@ apg_mpc:
   rtol: 1.0e-6
 
   linesearch:
-    max_stepsize: 0.1 # The maximum admissible step size
+    init_stepsize: 0.01
+    max_stepsize: 1.0 # The maximum admissible step size
     coef: 0.01 # The agressiveness coefficient. The smaller the larger step size in the optimization
     decrease_factor: 0.7 # The decrease factor when performing the armijo linesearch
     increase_factor: 1.3 # The increase factor at each new gradient descent iteration
