@@ -18,7 +18,7 @@ from sde4mbrl_px4.msg import OptMPCState
 
 
 from geometry_msgs.msg import PoseStamped
-from mavros_msgs.msg import MPCMotorsCMD
+# from mavros_msgs.msg import MPCMotorsCMD
 
 import pymavlink.mavutil as mavutil
 
@@ -43,7 +43,7 @@ class SDEControlROS:
 
         # Constants used below
         # the control automata has 3 states: 'idle', 'pos', 'traj'. idle performs pistion control to reach the initial state of the trajectory
-        self.control_state_dict = {'idle': 0, 'pos': 1, 'traj': 2, 'none' : -1}
+        self.control_state_dict = {'none' : 0, 'reset' : 1, 'test' : 2, 'pos': 3, 'idle': 4, 'traj': 5}
         self.name_control_state_dict = {v : k for k, v in self.control_state_dict.items()}
         self._control_state = self.control_state_dict['none']
         self.last_traj_time = 0.0
@@ -57,7 +57,7 @@ class SDEControlROS:
         self._trajec_time = -1.0
         self._pos_control = False
         self._test_mode = False
-        self.mpc_on = MPCMotorsCMD.MPC_OFF
+        self.mpc_on = self.control_state_dict['none']
         self.reset_done = False
         self._index = 0
         self.current_weight_motors = 0
@@ -313,6 +313,8 @@ class SDEControlROS:
             self.dt_state_callback = time.time() - _curr_time
             return
 
+        # Set the mpc on to the current control state
+        self.mpc_on = self._control_state if not self._test_mode else self.control_state_dict['test']
         # Publish the control action
         self.pub_cmd_setpoint(self.curr_time, self.sample_time)
 
@@ -449,7 +451,7 @@ class SDEControlROS:
 
 
     def initialize_mpc_callback(self, req):
-        """ Service callback to set the trajectory 
+        """ Service callback to set the trajectory
             This is called when controller_init is called in basic_control.py
         """
         res = LoadTrajAndParamsResponse()
@@ -461,7 +463,7 @@ class SDEControlROS:
             return res
 
         # Controller initialized
-        self.mpc_on = MPCMotorsCMD.MPC_RESET
+        self.mpc_on = self.control_state_dict['reset']
 
         # Send this message 5 times to make sure that the controller is reset
         for _ in range(5):
@@ -497,7 +499,7 @@ class SDEControlROS:
 
         if mode == FollowTrajRequest.CTRL_TEST:
             # We are in test mode
-            self.mpc_on = MPCMotorsCMD.MPC_TEST
+            self.mpc_on =  self.control_state_dict['test']
             self._test_mode = True
             self._pos_control = True
             self._run_trajectory = False
@@ -509,7 +511,7 @@ class SDEControlROS:
 
         # Check if position control is requested
         if mode == FollowTrajRequest.CTRL_POSE_ACTIVE:
-            self.mpc_on = MPCMotorsCMD.MPC_ON
+            self.mpc_on = self.control_state_dict['pos']
             self._pos_control = True
             self._test_mode = False
             self._run_trajectory = False
@@ -521,7 +523,7 @@ class SDEControlROS:
 
         if mode == FollowTrajRequest.CTRL_INACTIVE:
             self.reset_done = False
-            self.mpc_on = MPCMotorsCMD.MPC_OFF
+            self.mpc_on = self.control_state_dict['none']
             self._test_mode = False
             self._pos_control = False
             self._run_trajectory = False
@@ -552,7 +554,7 @@ class SDEControlROS:
             rospy.logwarn("The controller is not in idle mode, so the trajectory is not running. The controller is going in idle mode now.")
         self._test_mode = False
         self._pos_control = False
-        self.mpc_on = MPCMotorsCMD.MPC_ON
+        self.mpc_on = self.control_state_dict['idle'] if not self._run_trajectory else self.control_state_dict['traj']
 
         # ros warn the user
         rospy.logwarn("run_trajectory_ = {}, trajec_time_ = {}".format(self._run_trajectory, self._trajec_time))
