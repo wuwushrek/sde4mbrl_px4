@@ -1,8 +1,9 @@
 # Directory to the learned model parameters
-# learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/hexa_ahg/my_models/hexa_ahg_linear_nonoise_v3_sde.pkl
 learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/hexa_ahg/my_models/hexa_ahg_v4_sde.pkl
 # trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/test_traj_gen.csv
-trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/vcircle_traj_gen.csv
+# trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/vcircle_traj_gen.csv
+trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/fast_circle.csv
+# trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/fast_lemn.csv
 
 
 input_constr:
