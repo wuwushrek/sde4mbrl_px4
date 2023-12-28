@@ -1,7 +1,9 @@
 # Directory to the learned model parameters
+# learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_models/iris_sitl_ode_sde.pkl
 learned_model_params: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_models/iris_sitl_sde.pkl
-# trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/test_traj_gen.csv
-trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/vcircle_traj_gen.csv
+# use_sysId_model: True
+# trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/fast2_circle.csv
+trajectory_path: ~/Documents/sde4mbrl/sde4mbrlExamples/rotor_uav/iris_sitl/my_data/fast2_lemn.csv
 
 input_constr:
   # pwm_1, pwm_2, pwm_3, pwm_4
@@ -26,27 +28,18 @@ enforce_ubound: True
 #   slack_proximal: False
 #   constr_pen: 0.1
 
+# Trajectory cost
 cost_params:
   uref: [0.71, 0.71, 0.71, 0.71]
-  uerr: 0.001 # m1, m2, m3, m4 1.0
+  uerr: 1.0 # m1, m2, m3, m4 1.0
   perr: [100., 100., 200.] # x, y, z
   verr: [5.0, 5.0, 10.0] # vx, vy, vz
   qerr: [1, 1, 100] # qx, qy, qz
   werr: [1.0, 1.0, 1.0] # wx, wy, wz
   # res_sig: [0, 0.1]
   res_mult: 0.01
-  # u_slew_coeff: 0.01
+  u_slew_coeff: 1.0
 
-# cost_params:
-#   uref: [0.71, 0.71, 0.71, 0.71]
-#   uerr: 0.01 # m1, m2, m3, m4 1.0
-#   perr: [20., 20., 50.] # x, y, z
-#   verr: [5.0, 5.0, 5.0] # vx, vy, vz
-#   qerr: [0.1, 0.1, 20] # qx, qy, qz
-#   werr: [3.0, 3.0, 3.0] # wx, wy, wz
-#   # res_sig: [0, 0.1]
-#   res_mult: 0.1
-#   u_slew_coeff: 0.1
 
 horizon: 20
 num_short_dt: 20
@@ -54,7 +47,6 @@ short_step_dt: 0.05
 # DANGEROUS: To use a time step different higher than the one used during training
 long_step_dt: 0.05
 discount: 1.0
-
 
 # Number of particles when sampling the SDE
 num_particles: 1
@@ -82,12 +74,12 @@ apg_mpc:
 
   linesearch:
     init_stepsize: 0.01
-    max_stepsize: 0.1 # The maximum admissible step size
-    coef: 0.1 # The agressiveness coefficient. The smaller the larger step size in the optimization
+    max_stepsize: 1.0 # The maximum admissible step size
+    coef: 0.01 # The agressiveness coefficient. The smaller the larger step size in the optimization
     decrease_factor: 0.7 # The decrease factor when performing the armijo linesearch
     increase_factor: 1.3 # The increase factor at each new gradient descent iteration
     # # The reset strategy at each iteration
     # # "conservative": re-use previous stepsize, producing a non increasing sequence of stepsizes. Slow convergence.
     # # "increase": attempt to re-use previous stepsize multiplied by increase_factor. Cheap and efficient heuristic.
     reset_option: increase # or conservative
-    maxls: 10 # Maximum number of iterations during the line search
+    maxls: 4 # Maximum number of iterations during the line search
